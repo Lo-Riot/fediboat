@@ -1,10 +1,11 @@
+import click
 from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Log, Markdown
 
-from cli import login
+from cli import cli
 
 
 class Status(Screen):
@@ -69,8 +70,6 @@ class FetaApp(App):
 
 
 if __name__ == "__main__":
-    auth_path = Path("~/.config/feta/auth.json").expanduser()
-    login(auth_path)
-
+    cli()
     app = FetaApp()
     app.run()

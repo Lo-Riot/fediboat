@@ -2,7 +2,7 @@ import requests
 import webbrowser
 
 
-class APIError:
+class APIError(Exception):
     pass
 
 
@@ -35,7 +35,7 @@ def auth(instance_url: str, client_id: int, client_secret: str, authz_code: str)
             "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
             "grant_type": "authorization_code",
             "code": authz_code,
-            "scope": "read write push",
+            "scope": "read write follow",
         },
     ).json()
     return resp["access_token"]
