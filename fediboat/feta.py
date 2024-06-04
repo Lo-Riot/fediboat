@@ -5,7 +5,7 @@ from textual.app import App, ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Log, Markdown
 
-from cli import cli
+from fediboat.cli import cli
 
 
 class Status(Screen):
@@ -69,7 +69,11 @@ class FetaApp(App):
         self.query_one(DataTable).action_select_cursor()
 
 
-if __name__ == "__main__":
-    cli()
+@cli.command()
+def tui():
     app = FetaApp()
     app.run()
+
+
+if __name__ == "__main__":
+    cli()
