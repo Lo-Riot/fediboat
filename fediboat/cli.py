@@ -13,7 +13,7 @@ def cli():
 
 @cli.command()
 def login():
-    auth_file_path = Path("~/.config/feta/auth.json").expanduser()
+    auth_file_path = Path("~/.config/fediboat/auth.json").expanduser()
     if auth_file_path.exists() and auth_file_path.is_file():
         auth_file_content = json.loads(auth_file_path.read_text())
         current_user = auth_file_content["current"]

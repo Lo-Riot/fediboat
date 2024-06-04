@@ -18,10 +18,10 @@ def create_app(instance_url: str) -> dict:
     return requests.post(
         f"{instance_url}/api/v1/apps",
         data={
-            "client_name": "Feta",
+            "client_name": "Fediboat",
             "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
             "scopes": "read write follow",
-            "website": "https://github.com/Lo-Riot/feta",
+            "website": "https://github.com/Lo-Riot/fediboat",
         },
     ).json()
 

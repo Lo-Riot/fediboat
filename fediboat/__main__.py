@@ -17,8 +17,8 @@ class Status(Screen):
         yield Footer()
 
 
-class FetaApp(App):
-    """Feta - Fediverse Tui App"""
+class FediboatApp(App):
+    """Fediboat - Mastodon TUI client"""
 
     BINDINGS = [
         ("q", "quit", "Quit"),
@@ -33,7 +33,7 @@ class FetaApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "Feta"
+        self.title = "Fediboat"
         self.sub_title = "Home timeline"
         self.install_screen(Status(), name="status")
 
@@ -71,7 +71,7 @@ class FetaApp(App):
 
 @cli.command()
 def tui():
-    app = FetaApp()
+    app = FediboatApp()
     app.run()
 
 
