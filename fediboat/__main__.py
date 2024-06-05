@@ -1,18 +1,17 @@
-import click
-from pathlib import Path
-
 from textual.app import App, ComposeResult
+from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Log, Markdown
+from textual.widgets import DataTable, Footer, Header, Markdown
 
 from fediboat.cli import cli
 
 
 class Status(Screen):
     BINDINGS = [("q", "app.pop_screen", "Go back")]
+    content = reactive("", recompose=True)
 
     def compose(self) -> ComposeResult:
-        yield Markdown()
+        yield Markdown(self.content)
         yield Header()
         yield Footer()
 
@@ -56,8 +55,11 @@ class FediboatApp(App):
             ]
         )
 
-    def on_data_table_row_selected(self) -> None:
-        self.app.push_screen("status")
+    def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
+        selected_content = self.query_one(DataTable).get_row(row_selected.row_key)
+        status_screen = self.app.get_screen("status")
+        status_screen.content = str(selected_content)
+        self.app.push_screen(status_screen)
 
     def action_cursor_up(self) -> None:
         self.query_one(DataTable).action_cursor_up()

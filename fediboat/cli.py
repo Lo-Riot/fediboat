@@ -26,6 +26,7 @@ def login():
             click.secho("Logged in successfully!", fg="green")
         except account.APIError as e:
             click.secho(e, err=True)
+        return
 
     instance_url = click.prompt(
         "Instance url",
