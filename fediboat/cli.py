@@ -1,33 +1,26 @@
 import click
 import webbrowser
-import json
 
 from pathlib import Path
+
 from .api import account
+from fediboat.settings import (
+    create_auth_settings,
+    load_settings,
+    AuthSettings,
+    LoadSettingsError,
+)
 
 
 @click.group()
-def cli():
-    pass
+@click.option("-a", "--auth", default="~/.config/fediboat/auth.json", type=Path)
+@click.pass_context
+def cli(ctx, auth: Path):
+    ctx.ensure_object(dict)
+    ctx.obj["AUTH_SETTINGS"] = auth
 
 
-@cli.command()
-def login():
-    auth_file_path = Path("~/.config/fediboat/auth.json").expanduser()
-    if auth_file_path.exists() and auth_file_path.is_file():
-        auth_file_content = json.loads(auth_file_path.read_text())
-        current_user = auth_file_content["current"]
-
-        instance_url = "https://" + auth_file_content["current"].split("@")[1]
-        access_token = auth_file_content["users"][current_user]["access_token"]
-
-        try:
-            account.verify_credentials(instance_url, access_token)
-            click.secho("Logged in successfully!", fg="green")
-        except account.APIError as e:
-            click.secho(e, err=True)
-        return
-
+def _login_account() -> AuthSettings:
     instance_url = click.prompt(
         "Instance url",
         default="https://mastodon.social",
@@ -48,20 +41,31 @@ def login():
     instance_domain = instance_url.replace("https://", "")
     full_username = f"{user['acct']}@{instance_domain}"
 
-    auth_file_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(auth_file_path, "w") as f:
-        auth_file_content = {
-            "current": full_username,
-            "apps": {
-                instance_domain: {
-                    "client_id": app["client_id"],
-                    "client_secret": app["client_secret"],
-                },
-            },
-            "users": {
-                full_username: {
-                    "access_token": access_token,
-                },
-            },
-        }
-        f.write(json.dumps(auth_file_content))
+    auth_settings = AuthSettings(
+        instance_url,
+        instance_domain,
+        full_username,
+        access_token,
+        app["client_id"],
+        app["client_secret"],
+    )
+    return auth_settings
+
+
+@cli.command()
+@click.pass_context
+def login(ctx):
+    auth_settings_file = ctx.obj["AUTH_SETTINGS"].expanduser()
+
+    try:
+        auth_settings = load_settings(auth_settings_file).auth
+        account.verify_credentials(
+            auth_settings.instance_url, auth_settings.access_token
+        )
+        click.secho("Logged in successfully!", fg="green")
+    except LoadSettingsError:
+        auth_settings = _login_account()
+        create_auth_settings(auth_settings_file, auth_settings)
+        click.secho("Logged in successfully!", fg="green")
+    except account.APIError as e:
+        click.secho(e, err=True)

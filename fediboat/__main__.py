@@ -1,9 +1,12 @@
+from pathlib import Path
+import click
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Markdown
 
 from fediboat.cli import cli
+from fediboat.settings import Settings, load_settings
 
 
 class Status(Screen):
@@ -25,6 +28,10 @@ class FediboatApp(App):
         ("k", "cursor_up"),
         ("l", "select_status"),
     ]
+
+    def __init__(self, settings: Settings):
+        super().__init__()
+        self.auth_settings = settings.auth
 
     def compose(self) -> ComposeResult:
         yield DataTable(id="timeline", cursor_type="row", show_header=False)
@@ -72,8 +79,10 @@ class FediboatApp(App):
 
 
 @cli.command()
-def tui():
-    app = FediboatApp()
+@click.pass_context
+def tui(ctx):
+    settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
+    app = FediboatApp(settings)
     app.run()
 
 
