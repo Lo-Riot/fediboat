@@ -1,6 +1,8 @@
 import requests
 import webbrowser
 
+from fediboat.settings import AuthSettings
+
 
 class APIError(Exception):
     pass
@@ -12,6 +14,10 @@ class LoginError(APIError):
 
 class AppCreateError(APIError):
     pass
+
+
+def _get_headers(access_token: str):
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 def create_app(instance_url: str) -> dict:
@@ -45,5 +51,13 @@ def verify_credentials(instance_url: str, access_token: str) -> dict:
     """Returns account id or raises LoginError"""
     return requests.get(
         f"{instance_url}/api/v1/accounts/verify_credentials",
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers=_get_headers(access_token),
     ).json()
+
+
+class AccountAPI:
+    """API for a logged in account"""
+
+    def __init__(self, settings: AuthSettings):
+        self.settings = settings
+        self.headers = _get_headers(settings.access_token)

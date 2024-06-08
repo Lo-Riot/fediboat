@@ -4,6 +4,7 @@ from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Markdown
+from fediboat.api.timeline import TimelineAPI
 
 from fediboat.cli import cli
 from fediboat.settings import Settings, load_settings
@@ -27,11 +28,12 @@ class FediboatApp(App):
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_status"),
+        ("r", "update_timeline", "Refresh"),
     ]
 
-    def __init__(self, settings: Settings):
+    def __init__(self, timeline_api: TimelineAPI):
+        self.timeline_api = timeline_api
         super().__init__()
-        self.auth_settings = settings.auth
 
     def compose(self) -> ComposeResult:
         yield DataTable(id="timeline", cursor_type="row", show_header=False)
@@ -45,28 +47,25 @@ class FediboatApp(App):
 
         timeline = self.query_one(DataTable)
         timeline.add_columns("id", "date", "user", "title")
-        timeline.add_rows(
-            [
-                (
-                    1,
-                    "Jun 01",
-                    "@user",
-                    "Example post...",
-                ),
-                (
-                    2,
-                    "Jun 01",
-                    "@user",
-                    "Example post...",
-                ),
-            ]
-        )
+
+        self.action_update_timeline()
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         selected_content = self.query_one(DataTable).get_row(row_selected.row_key)
         status_screen = self.app.get_screen("status")
-        status_screen.content = str(selected_content)
+        status_screen.content = selected_content[3]
         self.app.push_screen(status_screen)
+
+    def action_update_timeline(self) -> None:
+        timeline = self.query_one(DataTable)
+        timeline_json = self.timeline_api.update()
+        for status_id, status in enumerate(timeline_json):
+            timeline.add_row(
+                status_id + 1,
+                status["created_at"],
+                status["account"]["acct"],
+                status["content"],
+            )
 
     def action_cursor_up(self) -> None:
         self.query_one(DataTable).action_cursor_up()
@@ -82,7 +81,8 @@ class FediboatApp(App):
 @click.pass_context
 def tui(ctx):
     settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
-    app = FediboatApp(settings)
+    timeline_api = TimelineAPI(settings.auth)
+    app = FediboatApp(timeline_api)
     app.run()
 
 
