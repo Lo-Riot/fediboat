@@ -49,10 +49,15 @@ def auth(instance_url: str, client_id: int, client_secret: str, authz_code: str)
 
 def verify_credentials(instance_url: str, access_token: str) -> dict:
     """Returns account id or raises LoginError"""
-    return requests.get(
+    resp = requests.get(
         f"{instance_url}/api/v1/accounts/verify_credentials",
         headers=_get_headers(access_token),
-    ).json()
+    )
+    resp_data = resp.json()
+
+    if resp.status_code != 200:
+        raise LoginError(resp_data["error"])
+    return resp_data
 
 
 class AccountAPI:

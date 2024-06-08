@@ -1,9 +1,15 @@
+import sys
 import click
 import webbrowser
 
 from pathlib import Path
 
-from .api import account
+from .api.account import (
+    create_app,
+    auth,
+    verify_credentials,
+    APIError,
+)
 from fediboat.settings import (
     create_auth_settings,
     load_settings,
@@ -25,7 +31,7 @@ def _login_account() -> AuthSettings:
         "Instance url",
         default="https://mastodon.social",
     )
-    app = account.create_app(instance_url)
+    app = create_app(instance_url)
     webbrowser.open(
         f"{instance_url}/oauth/authorize"
         f"?client_id={app['client_id']}&scope=read+write+follow"
@@ -33,10 +39,10 @@ def _login_account() -> AuthSettings:
     )
 
     authz_code = click.prompt("Code")
-    access_token = account.auth(
+    access_token = auth(
         instance_url, app["client_id"], app["client_secret"], authz_code
     )
-    user = account.verify_credentials(instance_url, access_token)
+    user = verify_credentials(instance_url, access_token)
 
     instance_domain = instance_url.replace("https://", "")
     full_username = f"{user['acct']}@{instance_domain}"
@@ -59,13 +65,18 @@ def login(ctx):
 
     try:
         auth_settings = load_settings(auth_settings_file).auth
-        account.verify_credentials(
-            auth_settings.instance_url, auth_settings.access_token
+        verify_credentials(
+            auth_settings.instance_url,
+            auth_settings.access_token,
         )
-        click.secho("Logged in successfully!", fg="green")
     except LoadSettingsError:
         auth_settings = _login_account()
-        create_auth_settings(auth_settings_file, auth_settings)
-        click.secho("Logged in successfully!", fg="green")
-    except account.APIError as e:
-        click.secho(e, err=True)
+        create_auth_settings(
+            auth_settings_file,
+            auth_settings,
+        )
+    except APIError as e:
+        click.secho(f"Error: {e}", err=True, fg="red")
+        sys.exit(1)
+
+    click.secho("Logged in successfully!", fg="green")
