@@ -62,9 +62,11 @@ class FediboatApp(App):
         self.app.push_screen(status_screen)
 
     def action_update_timeline(self) -> None:
+        timeline_data = self.timeline_api.update()
+
         timeline = self.query_one(DataTable)
-        timeline_json = self.timeline_api.update()
-        for status_id, status in enumerate(timeline_json):
+        timeline.clear()
+        for status_id, status in enumerate(timeline_data):
             timeline.add_row(
                 status_id + 1,
                 status["created_at"],
