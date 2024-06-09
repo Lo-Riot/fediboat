@@ -20,19 +20,25 @@ def _get_headers(access_token: str):
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def create_app(instance_url: str) -> dict:
+def create_app(instance_url: str, scopes: str = "read write follow") -> dict:
     return requests.post(
         f"{instance_url}/api/v1/apps",
         data={
             "client_name": "Fediboat",
             "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
-            "scopes": "read write follow",
+            "scopes": scopes,
             "website": "https://github.com/Lo-Riot/fediboat",
         },
     ).json()
 
 
-def auth(instance_url: str, client_id: int, client_secret: str, authz_code: str) -> str:
+def auth(
+    instance_url: str,
+    client_id: int,
+    client_secret: str,
+    authz_code: str,
+    scope: str = "read write follow",
+) -> str:
     resp = requests.post(
         f"{instance_url}/oauth/token",
         data={
@@ -41,7 +47,7 @@ def auth(instance_url: str, client_id: int, client_secret: str, authz_code: str)
             "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
             "grant_type": "authorization_code",
             "code": authz_code,
-            "scope": "read write follow",
+            "scope": scope,
         },
     ).json()
     return resp["access_token"]
