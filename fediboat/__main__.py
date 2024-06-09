@@ -1,13 +1,15 @@
-from pathlib import Path
 import click
+from datetime import datetime
+from markdownify import markdownify as md
+
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Markdown
-from fediboat.api.timeline import TimelineAPI
 
+from fediboat.api.timeline import TimelineAPI
 from fediboat.cli import cli
-from fediboat.settings import Settings, load_settings
+from fediboat.settings import load_settings
 
 
 class Status(Screen):
@@ -52,6 +54,7 @@ class FediboatApp(App):
         timeline.add_columns("id", "date")
         timeline.add_column("user", width=25)
         timeline.add_column("title", width=50)
+        timeline.add_column("is_reply", width=1)
 
         self.action_update_timeline()
 
@@ -69,9 +72,10 @@ class FediboatApp(App):
         for status_id, status in enumerate(timeline_data):
             timeline.add_row(
                 status_id + 1,
-                status["created_at"],
+                datetime.fromisoformat(status["created_at"]).strftime("%b %d"),
                 status["account"]["acct"],
-                status["content"],
+                md(status["content"]),
+                "↵" if status["in_reply_to_id"] else "",
             )
 
     def action_cursor_up(self) -> None:
