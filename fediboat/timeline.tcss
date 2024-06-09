@@ -1,0 +1,10 @@
+Screen {
+    align: center top;
+}
+
+#timeline {
+    width: auto;
+    overflow-x: hidden;
+    scrollbar-size-vertical: 0;
+}
+

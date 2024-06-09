@@ -31,6 +31,8 @@ class FediboatApp(App):
         ("r", "update_timeline", "Refresh"),
     ]
 
+    CSS_PATH = "timeline.tcss"
+
     def __init__(self, timeline_api: TimelineAPI):
         self.timeline_api = timeline_api
         super().__init__()
@@ -46,7 +48,10 @@ class FediboatApp(App):
         self.install_screen(Status(), name="status")
 
         timeline = self.query_one(DataTable)
-        timeline.add_columns("id", "date", "user", "title")
+
+        timeline.add_columns("id", "date")
+        timeline.add_column("user", width=25)
+        timeline.add_column("title", width=50)
 
         self.action_update_timeline()
 
