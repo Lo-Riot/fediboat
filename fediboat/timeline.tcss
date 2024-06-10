@@ -8,3 +8,7 @@ Screen {
     scrollbar-size-vertical: 0;
 }
 
+DataTable > .datatable--cursor {
+    background: #8FBC8F;
+    color: $text;
+}

@@ -1,6 +1,7 @@
 import click
-from datetime import datetime
+
 from markdownify import markdownify as md
+from rich.text import Text
 
 from textual.app import App, ComposeResult
 from textual.reactive import reactive
@@ -51,6 +52,8 @@ class FediboatApp(App):
 
         timeline = self.query_one(DataTable)
 
+        timeline.cursor_background_priority = "renderable"
+
         timeline.add_columns("id", "date")
         timeline.add_column("user", width=25)
         timeline.add_column("title", width=50)
@@ -71,11 +74,11 @@ class FediboatApp(App):
         timeline.clear()
         for row_index, status in enumerate(statuses):
             timeline.add_row(
-                row_index + 1,
-                status.created_at.strftime("%b %d"),
-                status.account.acct,
-                md(status.content),
-                "↵" if status.in_reply_to_id is not None else "",
+                Text(str(row_index + 1), "#708090"),
+                Text(status.created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
+                Text(status.account.acct, "#DDA0DD"),
+                Text(md(status.content), "#F5DEB3"),
+                Text("↵", "#87CEFA") if status.in_reply_to_id is not None else "",
             )
 
     def action_cursor_up(self) -> None:
