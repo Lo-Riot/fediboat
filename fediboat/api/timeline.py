@@ -1,30 +1,36 @@
+from pydantic import TypeAdapter
 import requests
+
 from fediboat.api.account import AccountAPI
 from fediboat.settings import AuthSettings
+from fediboat.entities import Status
 
 
 class TimelineAPI(AccountAPI):
     def __init__(
         self,
         settings: AuthSettings,
-        timeline_name: str = "home",
+        timeline: str = "home",
     ):
-        self.timeline_name = timeline_name
-        self._timeline_data: list[dict] = list(dict())
+        self.timeline = timeline
+        self._statuses: list[Status] = list()
         super().__init__(settings)
 
-    def update(self) -> list[dict]:
+    def update(self) -> list[Status]:
         query_params = dict()
-        if len(self._timeline_data) != 0:
-            since_id = self._timeline_data[0]["id"]
+        if len(self._statuses) != 0:
+            since_id = self._statuses[0].id
             query_params["since_id"] = since_id
 
-        new_timeline_data: list[dict] = requests.get(
-            f"{self.settings.instance_url}/api/v1/timelines/{self.timeline_name}",
+        adapter = TypeAdapter(list[Status])
+        new_statuses_json = requests.get(
+            f"{self.settings.instance_url}/api/v1/timelines/{self.timeline}",
             params=query_params,
             headers=self.headers,
         ).json()
-        new_timeline_data.extend(self._timeline_data)
 
-        self._timeline_data = new_timeline_data
-        return self._timeline_data
+        new_statuses = adapter.validate_python(new_statuses_json)
+        new_statuses.extend(self._statuses)
+
+        self._statuses = new_statuses
+        return self._statuses

@@ -65,17 +65,17 @@ class FediboatApp(App):
         self.app.push_screen(status_screen)
 
     def action_update_timeline(self) -> None:
-        timeline_data = self.timeline_api.update()
+        statuses = self.timeline_api.update()
 
         timeline = self.query_one(DataTable)
         timeline.clear()
-        for status_id, status in enumerate(timeline_data):
+        for row_index, status in enumerate(statuses):
             timeline.add_row(
-                status_id + 1,
-                datetime.fromisoformat(status["created_at"]).strftime("%b %d"),
-                status["account"]["acct"],
-                md(status["content"]),
-                "↵" if status["in_reply_to_id"] else "",
+                row_index + 1,
+                status.created_at.strftime("%b %d"),
+                status.account.acct,
+                md(status.content),
+                "↵" if status.in_reply_to_id is not None else "",
             )
 
     def action_cursor_up(self) -> None:
