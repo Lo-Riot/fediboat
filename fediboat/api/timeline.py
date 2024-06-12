@@ -34,3 +34,6 @@ class TimelineAPI(AccountAPI):
 
         self._statuses = new_statuses
         return self._statuses
+
+    def get_status(self, index: int) -> Status:
+        return self._statuses[index]

@@ -62,9 +62,10 @@ class FediboatApp(App):
         self.action_update_timeline()
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
-        selected_content = self.query_one(DataTable).get_row(row_selected.row_key)
+        row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
         status_screen = self.app.get_screen("status")
-        status_screen.content = selected_content[3]
+        selected_status = self.timeline_api.get_status(row_index)
+        status_screen.content = md(selected_status.content)
         self.app.push_screen(status_screen)
 
     def action_update_timeline(self) -> None:
