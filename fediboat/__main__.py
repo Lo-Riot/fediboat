@@ -4,7 +4,6 @@ from markdownify import markdownify as md
 from rich.text import Text
 
 from textual.app import App, ComposeResult
-from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Markdown
 
@@ -15,7 +14,10 @@ from fediboat.settings import load_settings
 
 class Status(Screen):
     BINDINGS = [("q", "app.pop_screen", "Go back")]
-    content = reactive("", recompose=True)
+
+    def __init__(self, content: str | None = None):
+        self.content = content
+        super().__init__()
 
     def compose(self) -> ComposeResult:
         yield Markdown(self.content)
@@ -63,10 +65,9 @@ class FediboatApp(App):
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        status_screen = self.app.get_screen("status")
         selected_status = self.timeline_api.get_status(row_index)
-        status_screen.content = md(selected_status.content)
-        self.app.push_screen(status_screen)
+        markdown = md(selected_status.content)
+        self.app.push_screen(Status(markdown))
 
     def action_update_timeline(self) -> None:
         statuses = self.timeline_api.update()
