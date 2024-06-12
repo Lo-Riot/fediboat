@@ -30,18 +30,22 @@ def load_settings(auth_settings_file: Path) -> Settings:
         raise LoadSettingsError(f"{auth_settings_file} does not exist!")
 
     auth_settings_json = json.loads(auth_settings_file.read_text())
-    current_user = auth_settings_json["current"]
-    instance_domain = auth_settings_json["current"].split("@")[1]
-    instance_url = "https://" + instance_domain
 
-    access_token = auth_settings_json["users"][current_user]["access_token"]
-    client_id = auth_settings_json["apps"][instance_domain]["client_id"]
-    client_secret = auth_settings_json["apps"][instance_domain]["client_secret"]
+    full_username = auth_settings_json["current"]
+    user = auth_settings_json["users"][full_username]
+
+    instance_domain = user["instance"]
+    instance_url = "https://" + instance_domain
+    access_token = user["access_token"]
+
+    app = auth_settings_json["apps"][instance_domain]
+    client_id = app["client_id"]
+    client_secret = app["client_secret"]
 
     auth_settings = AuthSettings(
         instance_url,
         instance_domain,
-        current_user,
+        full_username,
         access_token,
         client_id,
         client_secret,
@@ -62,8 +66,9 @@ def create_auth_settings(auth_settings_file: Path, auth_settings: AuthSettings) 
             },
             "users": {
                 auth_settings.full_username: {
+                    "instance": auth_settings.instance_domain,
                     "access_token": auth_settings.access_token,
                 },
             },
         }
-        f.write(json.dumps(auth_file_content))
+        f.write(json.dumps(auth_file_content, indent=4))
