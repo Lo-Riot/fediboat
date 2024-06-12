@@ -70,14 +70,15 @@ class FediboatApp(App):
         self.app.push_screen(Status(markdown))
 
     def action_update_timeline(self) -> None:
-        statuses = self.timeline_api.update()
-
         timeline = self.query_one(DataTable)
         timeline.clear()
+
+        statuses = self.timeline_api.update()
         for row_index, status in enumerate(statuses):
+            created_at = status.created_at.astimezone()
             timeline.add_row(
                 Text(str(row_index + 1), "#708090"),
-                Text(status.created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
+                Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
                 Text(status.account.acct, "#DDA0DD"),
                 Text(md(status.content), "#F5DEB3"),
                 Text("↵", "#87CEFA") if status.in_reply_to_id is not None else "",
