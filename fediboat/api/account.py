@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import requests
 import webbrowser
 
@@ -66,9 +67,10 @@ def verify_credentials(instance_url: str, access_token: str) -> dict:
     return resp_data
 
 
-class AccountAPI:
+class AccountAPI(ABC):
     """API for a logged in account"""
 
+    @abstractmethod
     def __init__(self, settings: AuthSettings):
         self.settings = settings
         self.headers = _get_headers(settings.access_token)

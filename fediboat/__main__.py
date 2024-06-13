@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Input, Markdown
 
-from fediboat.api.timeline import TimelineAPI
+from fediboat.api.statuses import StatusAPI, ThreadAPI, TimelineAPI
 from fediboat.cli import cli
 from fediboat.settings import load_settings
 
@@ -41,33 +41,23 @@ class Status(Screen):
         yield Footer()
 
 
-class FediboatApp(App):
-    """Fediboat - Mastodon TUI client"""
-
+class Timeline(Screen):
     BINDINGS = [
-        ("q", "quit", "Quit"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_status"),
+        ("q", "exit", "Quit"),
         ("r", "update_timeline", "Refresh"),
+        ("t", "open_thread", "Open thread"),
     ]
 
     CSS_PATH = "timeline.tcss"
 
-    def __init__(self, timeline_api: TimelineAPI):
-        self.timeline_api = timeline_api
+    def __init__(self, status_api: StatusAPI):
+        self.status_api = status_api
         super().__init__()
 
-    def compose(self) -> ComposeResult:
-        yield DataTable(id="timeline", cursor_type="row", show_header=False)
-        yield Header()
-        yield Footer()
-
     def on_mount(self) -> None:
-        self.title = "Fediboat"
-        self.sub_title = "Home timeline"
-        self.install_screen(Status(), name="status")
-
         timeline = self.query_one(DataTable)
 
         timeline.cursor_background_priority = "renderable"
@@ -79,9 +69,14 @@ class FediboatApp(App):
 
         self.action_update_timeline()
 
+    def compose(self) -> ComposeResult:
+        yield DataTable(id="timeline", cursor_type="row", show_header=False)
+        yield Header()
+        yield Footer()
+
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        selected_status = self.timeline_api.get_status(row_index)
+        selected_status = self.status_api.get_status(row_index)
         markdown = md(selected_status.content)
         self.app.push_screen(Status(markdown))
 
@@ -92,13 +87,13 @@ class FediboatApp(App):
         def jump_to_status(index: int):
             self.query_one(DataTable).move_cursor(row=index - 1)
 
-        self.push_screen(Jump(event.character), jump_to_status)
+        self.app.push_screen(Jump(event.character), jump_to_status)
 
     def action_update_timeline(self) -> None:
         timeline = self.query_one(DataTable)
         timeline.clear()
 
-        statuses = self.timeline_api.update()
+        statuses = self.status_api.update()
         for row_index, status in enumerate(statuses):
             created_at = status.created_at.astimezone()
             timeline.add_row(
@@ -109,6 +104,20 @@ class FediboatApp(App):
                 Text("↵", "#87CEFA") if status.in_reply_to_id is not None else "",
             )
 
+    def action_open_thread(self) -> None:
+        timeline = self.query_one(DataTable)
+        row_index = timeline.cursor_row
+
+        selected_status = self.status_api.get_status(row_index)
+        thread_api = ThreadAPI(self.status_api.settings, selected_status)
+        self.app.push_screen(Timeline(thread_api))
+
+    def action_exit(self) -> None:
+        if len(self.app.screen_stack) > 2:
+            self.app.pop_screen()  # If one or more threads are open
+        else:
+            self.app.exit()
+
     def action_cursor_up(self) -> None:
         self.query_one(DataTable).action_cursor_up()
 
@@ -117,6 +126,20 @@ class FediboatApp(App):
 
     def action_select_status(self) -> None:
         self.query_one(DataTable).action_select_cursor()
+
+
+class FediboatApp(App):
+    """Fediboat - Mastodon TUI client"""
+
+    def __init__(self, status_api: StatusAPI):
+        self.status_api = status_api
+        super().__init__()
+
+    def on_mount(self) -> None:
+        self.title = "Fediboat"
+        self.sub_title = "Home timeline"
+        self.install_screen(Status(), name="status")
+        self.push_screen(Timeline(self.status_api))
 
 
 @cli.command()
