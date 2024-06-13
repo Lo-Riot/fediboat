@@ -3,13 +3,29 @@ import click
 from markdownify import markdownify as md
 from rich.text import Text
 
+from textual import events, on
 from textual.app import App, ComposeResult
-from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Markdown
+from textual.screen import ModalScreen, Screen
+from textual.widgets import DataTable, Footer, Header, Input, Markdown
 
 from fediboat.api.timeline import TimelineAPI
 from fediboat.cli import cli
 from fediboat.settings import load_settings
+
+
+class Jump(ModalScreen[int]):
+    BINDINGS = [("escape", "app.pop_screen")]
+
+    def __init__(self, character: str):
+        self.character = character
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Input(self.character, type="integer")
+
+    @on(Input.Submitted)
+    def submit(self) -> None:
+        self.dismiss(int(self.query_one(Input).value))
 
 
 class Status(Screen):
@@ -68,6 +84,15 @@ class FediboatApp(App):
         selected_status = self.timeline_api.get_status(row_index)
         markdown = md(selected_status.content)
         self.app.push_screen(Status(markdown))
+
+    def on_key(self, event: events.Key):
+        if event.character is None or not event.character.isdigit():
+            return
+
+        def jump_to_status(index: int):
+            self.query_one(DataTable).move_cursor(row=index - 1)
+
+        self.push_screen(Jump(event.character), jump_to_status)
 
     def action_update_timeline(self) -> None:
         timeline = self.query_one(DataTable)

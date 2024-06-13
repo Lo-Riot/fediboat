@@ -12,3 +12,8 @@ DataTable > .datatable--cursor {
     background: #8FBC8F;
     color: $text;
 }
+
+
+Jump {
+    align: left bottom;
+}
