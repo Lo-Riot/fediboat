@@ -1,11 +1,10 @@
 from abc import abstractmethod
-from typing import Any
 from pydantic import TypeAdapter
 import requests
 
 from fediboat.api.account import AccountAPI
 from fediboat.settings import AuthSettings
-from fediboat.entities import Status
+from fediboat.entities import Context, Status
 
 
 class StatusAPI(AccountAPI):
@@ -14,20 +13,12 @@ class StatusAPI(AccountAPI):
         self._statuses: list[Status] = list()
         super().__init__(settings)
 
-    def _fetch_statuses(self, query_params: dict | None = None) -> Any:
+    def _fetch_statuses(self, query_params: dict | None = None) -> str:
         return requests.get(
             self.settings.instance_url + self.api_endpoint,
             params=query_params,
             headers=self.headers,
-        ).json()
-
-    def _update_statuses(self, new_statuses_json: list[dict]):
-        adapter = TypeAdapter(list[Status])
-        new_statuses = adapter.validate_python(new_statuses_json)
-        new_statuses.extend(self._statuses)
-
-        self._statuses = new_statuses
-        return self._statuses
+        ).text
 
     def get_status(self, index: int) -> Status:
         return self._statuses[index]
@@ -44,6 +35,7 @@ class TimelineAPI(StatusAPI):
         timeline: str = "home",
     ):
         self.timeline = timeline
+        self.statuses_validator = TypeAdapter(list[Status])
         super().__init__(settings, api_endpoint=f"/api/v1/timelines/{self.timeline}")
 
     def update(self) -> list[Status]:
@@ -53,7 +45,11 @@ class TimelineAPI(StatusAPI):
             query_params["since_id"] = since_id
 
         new_statuses_json = self._fetch_statuses(query_params)
-        return self._update_statuses(new_statuses_json)
+        new_statuses = self.statuses_validator.validate_json(new_statuses_json)
+        new_statuses.extend(self._statuses)
+
+        self._statuses = new_statuses
+        return self._statuses
 
 
 class ThreadAPI(StatusAPI):
@@ -66,10 +62,12 @@ class ThreadAPI(StatusAPI):
         super().__init__(settings, api_endpoint=f"/api/v1/statuses/{status.id}/context")
 
     def update(self) -> list[Status]:
-        context_json = self._fetch_statuses()
-        new_statuses_json: list[dict] = context_json["ancestors"]
-        new_statuses_json.append(self.status.model_dump())
-        new_statuses_json.extend(context_json["descendants"])
+        thread_context_json = self._fetch_statuses()
+        thread_context = Context.model_validate_json(thread_context_json)
 
-        self._statuses.clear()
-        return self._update_statuses(new_statuses_json)
+        thread = thread_context.ancestors.copy()
+        thread.append(self.status)
+        thread.extend(thread_context.descendants)
+
+        self._statuses = thread
+        return self._statuses

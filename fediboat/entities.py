@@ -168,3 +168,8 @@ class Status(BaseModel):
     bookmarked: Optional[bool] = None
     pinned: Optional[bool] = None
     filtered: Optional[list[FilterResult]] = None
+
+
+class Context(BaseModel):
+    ancestors: list[Status]
+    descendants: list[Status]
