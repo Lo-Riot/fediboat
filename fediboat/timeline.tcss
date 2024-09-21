@@ -17,3 +17,10 @@ DataTable > .datatable--cursor {
 Jump {
     align: left bottom;
 }
+
+SwitchTimeline {
+    layout: vertical;
+    overflow-y: auto;
+    background: $background 0%;
+}
+

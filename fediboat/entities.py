@@ -9,9 +9,9 @@ class MediaAttachment(BaseModel):
     url: str
     preview_url: str
     remote_url: Optional[str] = None
-    meta: dict
+    meta: Optional[dict] = None
     description: Optional[str] = None
-    blurhash: str
+    blurhash: Optional[str] = None
 
 
 class Application(BaseModel):
@@ -123,7 +123,7 @@ class Account(BaseModel):
     emojis: list[CustomEmoji]
     bot: bool
     group: bool
-    discoverable: bool
+    discoverable: bool | None = None
     noindex: Optional[bool] = None
     moved: Optional["Account"] = None
     suspended: Optional[bool] = None

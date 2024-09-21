@@ -6,9 +6,21 @@ from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen, Screen
-from textual.widgets import DataTable, Footer, Header, Input, Markdown
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Markdown,
+)
 
-from fediboat.api.statuses import StatusAPI, ThreadAPI, TimelineAPI
+from fediboat.api.statuses import (
+    PublicRemoteTimelineAPI,
+    StatusAPI,
+    ThreadAPI,
+    TimelineAPI,
+    LocalTimelineAPI,
+)
 from fediboat.cli import cli
 from fediboat.settings import load_settings
 
@@ -26,6 +38,29 @@ class Jump(ModalScreen[int]):
     @on(Input.Submitted)
     def submit(self) -> None:
         self.dismiss(int(self.query_one(Input).value))
+
+
+class SwitchTimeline(ModalScreen[str]):
+    BINDINGS = [
+        ("h", "switch('Home')", "Home"),
+        ("l", "switch('Local')", "Local"),
+        ("n", "switch('')", "Notifications"),
+        ("p", "switch('')", "Personal"),
+        ("b", "switch('')", "Bookmarks"),
+        ("c", "switch('')", "Conversations"),
+        ("s", "switch('')", "Lists"),
+        ("g", "switch('Global')", "Global"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Footer()
+
+    def on_key(self, event: events.Key):
+        if self.active_bindings.get(event.key) is None:
+            self.dismiss()
+
+    def action_switch(self, timeline_name: str):
+        self.dismiss(timeline_name)
 
 
 class Status(Screen):
@@ -48,6 +83,7 @@ class Timeline(Screen):
         ("l", "select_status"),
         ("q", "exit", "Quit"),
         ("r", "update_timeline", "Refresh"),
+        ("g", "switch_timeline", "Switch timeline"),
         ("t", "open_thread", "Open thread"),
     ]
 
@@ -88,6 +124,23 @@ class Timeline(Screen):
             self.query_one(DataTable).move_cursor(row=index - 1)
 
         self.app.push_screen(Jump(event.character), jump_to_status)
+
+    def action_switch_timeline(self) -> None:
+        def switch_timeline(timeline_name: str):
+            if not isinstance(self.status_api, TimelineAPI):
+                return
+
+            timelines: dict[str, type[TimelineAPI]] = {
+                "Home": TimelineAPI,
+                "Local": LocalTimelineAPI,
+                "Global": PublicRemoteTimelineAPI,
+            }
+            timeline = timelines[timeline_name]
+            self.status_api = timeline(settings=self.status_api.settings)
+            self.sub_title = f"{timeline_name} Timeline"
+            self.action_update_timeline()
+
+        self.app.push_screen(SwitchTimeline(), switch_timeline)
 
     def action_update_timeline(self) -> None:
         timeline = self.query_one(DataTable)
