@@ -3,7 +3,7 @@ import click
 from markdownify import markdownify as md
 from rich.text import Text
 
-from textual import events, on
+from textual import events, on, log
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
@@ -14,9 +14,9 @@ from textual.widgets import (
     Markdown,
 )
 
-from fediboat.api.statuses import (
+from fediboat.api.entity import (
     PublicRemoteTimelineAPI,
-    StatusAPI,
+    EntityAPI,
     ThreadAPI,
     TimelineAPI,
     LocalTimelineAPI,
@@ -89,8 +89,8 @@ class Timeline(Screen):
 
     CSS_PATH = "timeline.tcss"
 
-    def __init__(self, status_api: StatusAPI):
-        self.status_api = status_api
+    def __init__(self, entity_api: EntityAPI):
+        self.entity_api = entity_api
         super().__init__()
 
     def on_mount(self) -> None:
@@ -112,7 +112,7 @@ class Timeline(Screen):
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        selected_status = self.status_api.get_status(row_index)
+        selected_status = self.entity_api.get_entity(row_index)
         markdown = md(selected_status.content)
         self.app.push_screen(Status(markdown))
 
@@ -127,7 +127,7 @@ class Timeline(Screen):
 
     def action_switch_timeline(self) -> None:
         def switch_timeline(timeline_name: str):
-            if not isinstance(self.status_api, TimelineAPI):
+            if not isinstance(self.entity_api, TimelineAPI):
                 return
 
             timelines: dict[str, type[TimelineAPI]] = {
@@ -136,7 +136,7 @@ class Timeline(Screen):
                 "Global": PublicRemoteTimelineAPI,
             }
             timeline = timelines[timeline_name]
-            self.status_api = timeline(settings=self.status_api.settings)
+            self.entity_api = timeline(settings=self.entity_api.settings)
             self.sub_title = f"{timeline_name} Timeline"
             self.action_update_timeline()
 
@@ -146,7 +146,7 @@ class Timeline(Screen):
         timeline = self.query_one(DataTable)
         timeline.clear()
 
-        statuses = self.status_api.update()
+        statuses = self.entity_api.update()
         for row_index, status in enumerate(statuses):
             created_at = status.created_at.astimezone()
             timeline.add_row(
@@ -161,8 +161,8 @@ class Timeline(Screen):
         timeline = self.query_one(DataTable)
         row_index = timeline.cursor_row
 
-        selected_status = self.status_api.get_status(row_index)
-        thread_api = ThreadAPI(self.status_api.settings, selected_status)
+        selected_status = self.entity_api.get_entity(row_index)
+        thread_api = ThreadAPI(self.entity_api.settings, selected_status)
         self.app.push_screen(Timeline(thread_api))
 
     def action_exit(self) -> None:
@@ -184,15 +184,15 @@ class Timeline(Screen):
 class FediboatApp(App):
     """Fediboat - Mastodon TUI client"""
 
-    def __init__(self, status_api: StatusAPI):
-        self.status_api = status_api
+    def __init__(self, entity_api: EntityAPI):
+        self.entity_api = entity_api
         super().__init__()
 
     def on_mount(self) -> None:
         self.title = "Fediboat"
         self.sub_title = "Home timeline"
         self.install_screen(Status(), name="status")
-        self.push_screen(Timeline(self.status_api))
+        self.push_screen(Timeline(self.entity_api))
 
 
 @cli.command()

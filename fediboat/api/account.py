@@ -67,7 +67,7 @@ def verify_credentials(instance_url: str, access_token: str) -> dict:
     return resp_data
 
 
-class AccountAPI(ABC):
+class BaseAPI(ABC):
     """API for a logged in account"""
 
     @abstractmethod
