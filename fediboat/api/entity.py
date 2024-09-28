@@ -44,7 +44,10 @@ class TimelineAPI(EntityAPI[Status]):
         self.statuses_validator = TypeAdapter(list[Status])
         super().__init__(settings)
 
-    def update(self, query_params: dict = dict()) -> list[Status]:
+    def update(self, query_params: dict | None = None) -> list[Status]:
+        if query_params is None:
+            query_params = dict()
+
         if len(self._entities) != 0:
             since_id = self._entities[0].id
             query_params["since_id"] = since_id
@@ -63,13 +66,19 @@ class PublicTimelineAPI(TimelineAPI):
 
 
 class PublicRemoteTimelineAPI(PublicTimelineAPI):
-    def update(self, query_params: dict = dict()) -> list[Status]:
+    def update(self, query_params: dict | None = None) -> list[Status]:
+        if query_params is None:
+            query_params = dict()
+
         query_params["remote"] = True
         return super().update(query_params)
 
 
 class LocalTimelineAPI(PublicTimelineAPI):
-    def update(self, query_params: dict = dict()) -> list[Status]:
+    def update(self, query_params: dict | None = None) -> list[Status]:
+        if query_params is None:
+            query_params = dict()
+
         query_params["local"] = True
         return super().update(query_params)
 
