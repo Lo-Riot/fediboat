@@ -17,7 +17,7 @@ class AppCreateError(APIError):
     pass
 
 
-def _get_headers(access_token: str):
+def get_headers(access_token: str):
     return {"Authorization": f"Bearer {access_token}"}
 
 
@@ -58,19 +58,10 @@ def verify_credentials(instance_url: str, access_token: str) -> dict:
     """Returns account id or raises LoginError"""
     resp = requests.get(
         f"{instance_url}/api/v1/accounts/verify_credentials",
-        headers=_get_headers(access_token),
+        headers=get_headers(access_token),
     )
     resp_data = resp.json()
 
     if resp.status_code != 200:
         raise LoginError(resp_data["error"])
     return resp_data
-
-
-class BaseAPI(ABC):
-    """API for a logged in account"""
-
-    @abstractmethod
-    def __init__(self, settings: AuthSettings):
-        self.settings = settings
-        self.headers = _get_headers(settings.access_token)

@@ -4,7 +4,7 @@ import webbrowser
 
 from pathlib import Path
 
-from .api.account import (
+from .api.auth import (
     create_app,
     auth,
     verify_credentials,

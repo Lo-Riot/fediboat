@@ -1,23 +1,24 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import TypeVar
 from pydantic import TypeAdapter, BaseModel
 
 import requests
 from textual import log
 
-from fediboat.api.account import BaseAPI
+from fediboat.api.auth import get_headers
 from fediboat.settings import AuthSettings
 from fediboat.entities import Context, Status
 
 T = TypeVar("T", bound=BaseModel)
 
 
-class EntityAPI[T](BaseAPI):
-    """Provides basic functionality to work with Mastodon API entities"""
+class BaseAPI[T](ABC):
+    """Provides basic functionality for an authenticated user to work with Mastodon API"""
 
     def __init__(self, settings: AuthSettings):
+        self.settings = settings
+        self.headers = get_headers(settings.access_token)
         self._entities: list[T] = list()
-        super().__init__(settings)
 
     def _fetch_entities(
         self, api_endpoint: str, query_params: dict | None = None
@@ -36,7 +37,7 @@ class EntityAPI[T](BaseAPI):
         """Updates entities"""  # TODO: Add max statuses limit and clear the old ones
 
 
-class TimelineAPI(EntityAPI[Status]):
+class TimelineAPI(BaseAPI[Status]):
     def __init__(
         self, settings: AuthSettings, api_endpoint: str = "/api/v1/timelines/home"
     ):
@@ -83,7 +84,7 @@ class LocalTimelineAPI(PublicTimelineAPI):
         return super().update(query_params)
 
 
-class ThreadAPI(EntityAPI[Status]):
+class ThreadAPI(BaseAPI[Status]):
     def __init__(
         self,
         settings: AuthSettings,
