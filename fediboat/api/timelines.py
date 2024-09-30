@@ -33,8 +33,8 @@ class BaseAPI[T](ABC):
         return self._entities[index]
 
     @abstractmethod
-    def update(self) -> list[T]:
-        """Updates entities"""  # TODO: Add max statuses limit and clear the old ones
+    def fetch_new(self) -> list[T]:
+        """Returns new entities"""  # TODO: Add max statuses limit and clear the old ones
 
 
 class TimelineAPI(BaseAPI[Status]):
@@ -45,19 +45,33 @@ class TimelineAPI(BaseAPI[Status]):
         self.statuses_validator = TypeAdapter(list[Status])
         super().__init__(settings)
 
-    def update(self, query_params: dict | None = None) -> list[Status]:
+    def _get_query_params(self, query_params: dict | None = None) -> dict:
         if query_params is None:
             query_params = dict()
+        return query_params
 
+    def fetch_new(self) -> list[Status]:
+        """Returns previous page"""
+        query_params = self._get_query_params()
         if len(self._entities) != 0:
-            since_id = self._entities[0].id
-            query_params["since_id"] = since_id
+            query_params["min_id"] = self._entities[0].id
 
         new_statuses_json = self._fetch_entities(self.api_endpoint, query_params)
         new_statuses = self.statuses_validator.validate_json(new_statuses_json)
         new_statuses.extend(self._entities)
 
         self._entities = new_statuses
+        return self._entities
+
+    def fetch_old(self) -> list[Status]:
+        """Returns next page"""
+        query_params = self._get_query_params()
+        if len(self._entities) != 0:
+            query_params["max_id"] = self._entities[-1].id
+
+        new_statuses_json = self._fetch_entities(self.api_endpoint, query_params)
+        new_statuses = self.statuses_validator.validate_json(new_statuses_json)
+        self._entities.extend(new_statuses)
         return self._entities
 
 
@@ -67,21 +81,21 @@ class PublicTimelineAPI(TimelineAPI):
 
 
 class PublicRemoteTimelineAPI(PublicTimelineAPI):
-    def update(self, query_params: dict | None = None) -> list[Status]:
+    def _get_query_params(self, query_params: dict | None = None) -> dict:
         if query_params is None:
             query_params = dict()
 
         query_params["remote"] = True
-        return super().update(query_params)
+        return super()._get_query_params(query_params)
 
 
 class LocalTimelineAPI(PublicTimelineAPI):
-    def update(self, query_params: dict | None = None) -> list[Status]:
+    def _get_query_params(self, query_params: dict | None = None) -> dict:
         if query_params is None:
             query_params = dict()
 
         query_params["local"] = True
-        return super().update(query_params)
+        return super()._get_query_params(query_params)
 
 
 class ThreadAPI(BaseAPI[Status]):
@@ -93,7 +107,7 @@ class ThreadAPI(BaseAPI[Status]):
         self.status = status
         super().__init__(settings)
 
-    def update(self) -> list[Status]:
+    def fetch_new(self) -> list[Status]:
         thread_context_json = self._fetch_entities(
             f"/api/v1/statuses/{self.status.id}/context"
         )

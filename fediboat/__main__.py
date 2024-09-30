@@ -82,7 +82,7 @@ class Timeline(Screen):
         ("k", "cursor_up"),
         ("l", "select_status"),
         ("q", "exit", "Quit"),
-        ("r", "update_timeline", "Refresh"),
+        ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
         ("t", "open_thread", "Open thread"),
     ]
@@ -103,7 +103,7 @@ class Timeline(Screen):
         timeline.add_column("title", width=50)
         timeline.add_column("is_reply", width=1)
 
-        self.action_update_timeline()
+        self.action_update_timeline_new()
 
     def compose(self) -> ComposeResult:
         yield DataTable(id="timeline", cursor_type="row", show_header=False)
@@ -138,16 +138,22 @@ class Timeline(Screen):
             timeline = timelines[timeline_name]
             self.mastodon_api = timeline(settings=self.mastodon_api.settings)
             self.sub_title = f"{timeline_name} Timeline"
-            self.action_update_timeline()
+            self.action_update_timeline_new()
 
         self.app.push_screen(SwitchTimeline(), switch_timeline)
 
-    def action_update_timeline(self) -> None:
+    def action_update_timeline_new(self) -> None:
+        statuses = self.mastodon_api.fetch_new()
+        self._add_rows(statuses)
+
+    def action_update_timeline_old(self) -> None:
+        statuses = self.mastodon_api.fetch_old()
+        self._add_rows(statuses)
+
+    def _add_rows(self, entities: list) -> None:
         timeline = self.query_one(DataTable)
         timeline.clear()
-
-        statuses = self.mastodon_api.update()
-        for row_index, status in enumerate(statuses):
+        for row_index, status in enumerate(entities):
             created_at = status.created_at.astimezone()
             timeline.add_row(
                 Text(str(row_index + 1), "#708090"),
@@ -175,7 +181,10 @@ class Timeline(Screen):
         self.query_one(DataTable).action_cursor_up()
 
     def action_cursor_down(self) -> None:
-        self.query_one(DataTable).action_cursor_down()
+        timeline = self.query_one(DataTable)
+        timeline.action_cursor_down()
+        if timeline.cursor_row == timeline.row_count - 1:
+            self.action_update_timeline_old()
 
     def action_select_status(self) -> None:
         self.query_one(DataTable).action_select_cursor()
