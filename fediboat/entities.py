@@ -1,13 +1,17 @@
 from datetime import datetime, date
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, Protocol
+from pydantic import BaseModel, computed_field
+
+
+class BaseEntity(BaseModel):
+    id: str
 
 
 class MediaAttachment(BaseModel):
     id: str
     type: str
     url: str
-    preview_url: str
+    preview_url: Optional[str] = None
     remote_url: Optional[str] = None
     meta: Optional[dict] = None
     description: Optional[str] = None
@@ -136,8 +140,7 @@ class Account(BaseModel):
     source: Optional[dict] = None
 
 
-class Status(BaseModel):
-    id: str
+class Status(BaseEntity):
     uri: str
     created_at: datetime
     account: Account
@@ -173,3 +176,24 @@ class Status(BaseModel):
 class Context(BaseModel):
     ancestors: list[Status]
     descendants: list[Status]
+
+
+class Report(BaseModel):
+    id: str
+    action_taken: bool
+    action_taken_at: Optional[datetime] = None
+    category: str
+    comment: str
+    forwarded: bool
+    created_at: datetime
+    status_ids: Optional[list[str]] = None
+    rule_ids: Optional[list[str]] = None
+    target_account: Account
+
+
+class Notification(BaseEntity):
+    type: str
+    created_at: datetime
+    account: Account
+    status: Optional[Status] = None
+    report: Optional[Report] = None
