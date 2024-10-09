@@ -133,7 +133,7 @@ class Account(BaseModel):
     suspended: Optional[bool] = None
     limited: Optional[bool] = None
     created_at: datetime
-    last_status_at: Optional[date] = None
+    last_status_at: Optional[datetime] = None
     statuses_count: int
     followers_count: int
     following_count: int
