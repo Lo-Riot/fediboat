@@ -1,7 +1,6 @@
-from pathlib import Path
 from pydantic import TypeAdapter
 import pytest
-from fediboat.api.timelines import TimelineAPI, ThreadAPI, NotificationAPI
+from fediboat.api.timelines import QueryParams, TimelineAPI, ThreadAPI, NotificationAPI
 from fediboat.entities import Status
 from fediboat.settings import AuthSettings
 
@@ -16,9 +15,7 @@ class TimelineAPIMock(TimelineAPI[Status]):
         self._response_mock = response_mock
         super().__init__(settings, validator)
 
-    def _fetch_entities(
-        self, api_endpoint: str, query_params: dict | None = None
-    ) -> str:
+    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
         return self._response_mock
 
 
@@ -32,9 +29,7 @@ class ThreadAPIMock(ThreadAPI):
         self._response_mock = response_mock
         super().__init__(settings, status)
 
-    def _fetch_entities(
-        self, api_endpoint: str, query_params: dict | None = None
-    ) -> str:
+    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
         return self._response_mock
 
 
@@ -47,9 +42,7 @@ class NotificationAPIMock(NotificationAPI):
         self._response_mock = response_mock
         super().__init__(settings)
 
-    def _fetch_entities(
-        self, api_endpoint: str, query_params: dict | None = None
-    ) -> str:
+    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
         return self._response_mock
 
 

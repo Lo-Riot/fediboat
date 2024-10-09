@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic, TypeAlias, TypeVar
 from pydantic import TypeAdapter
 
 import requests
@@ -9,6 +9,7 @@ from fediboat.settings import AuthSettings
 from fediboat.entities import BaseEntity, Context, Notification, Status
 
 Entity = TypeVar("Entity", bound=BaseEntity)
+QueryParams: TypeAlias = str | int | bool
 
 
 class BaseAPI(Generic[Entity], ABC):
@@ -19,9 +20,7 @@ class BaseAPI(Generic[Entity], ABC):
         self.headers = get_headers(settings.access_token)
         self.entities: list[Entity] = list()
 
-    def _fetch_entities(
-        self, api_endpoint: str, query_params: dict | None = None
-    ) -> str:
+    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
         return requests.get(
             self.settings.instance_url + api_endpoint,
             params=query_params,
@@ -42,14 +41,15 @@ class TimelineAPI(BaseAPI[Entity]):
         settings: AuthSettings,
         validator: TypeAdapter[list[Entity]],
         api_endpoint: str = "/api/v1/timelines/home",
+        **query_params: QueryParams,
     ):
         self.api_endpoint = api_endpoint
         self.validator = validator
         super().__init__(settings)
 
-    def _get_query_params(self, query_params: dict | None = None) -> dict:
-        if query_params is None:
-            query_params = dict()
+    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
+        """Returns a new dict of query parameters.
+        Override it to add custom parameters."""
         return query_params
 
     def fetch_new(self) -> list[Entity]:
@@ -58,7 +58,7 @@ class TimelineAPI(BaseAPI[Entity]):
         if len(self.entities) != 0:
             query_params["min_id"] = self.entities[0].id
 
-        new_statuses_json = self._fetch_entities(self.api_endpoint, query_params)
+        new_statuses_json = self._fetch_entities(self.api_endpoint, **query_params)
         new_statuses = self.validator.validate_json(new_statuses_json)
         new_statuses.extend(self.entities)
 
@@ -71,7 +71,7 @@ class TimelineAPI(BaseAPI[Entity]):
         if len(self.entities) != 0:
             query_params["max_id"] = self.entities[-1].id
 
-        new_statuses_json = self._fetch_entities(self.api_endpoint, query_params)
+        new_statuses_json = self._fetch_entities(self.api_endpoint, **query_params)
         new_statuses = self.validator.validate_json(new_statuses_json)
         self.entities.extend(new_statuses)
         return self.entities
@@ -87,21 +87,15 @@ class PublicTimelineAPI(TimelineAPI[Status]):
 
 
 class PublicRemoteTimelineAPI(PublicTimelineAPI):
-    def _get_query_params(self, query_params: dict | None = None) -> dict:
-        if query_params is None:
-            query_params = dict()
-
+    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
         query_params["remote"] = True
-        return super()._get_query_params(query_params)
+        return super()._get_query_params(**query_params)
 
 
 class LocalTimelineAPI(PublicTimelineAPI):
-    def _get_query_params(self, query_params: dict | None = None) -> dict:
-        if query_params is None:
-            query_params = dict()
-
+    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
         query_params["local"] = True
-        return super()._get_query_params(query_params)
+        return super()._get_query_params(**query_params)
 
 
 class NotificationAPI(TimelineAPI[Notification]):
@@ -112,12 +106,9 @@ class NotificationAPI(TimelineAPI[Notification]):
             api_endpoint="/api/v1/notifications",
         )
 
-    def _get_query_params(self, query_params: dict | None = None) -> dict:
-        if query_params is None:
-            query_params = dict()
-
+    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
         query_params["limit"] = 20
-        return super()._get_query_params(query_params)
+        return super()._get_query_params(**query_params)
 
 
 class ThreadAPI(BaseAPI[Status]):
