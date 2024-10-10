@@ -92,6 +92,8 @@ class BaseTimeline(Screen, Generic[Base]):
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_row"),
+        ("ctrl+u", "scroll_up"),
+        ("ctrl+d", "scroll_down"),
         ("q", "exit", "Quit"),
     ]
 
@@ -162,6 +164,16 @@ class BaseTimeline(Screen, Generic[Base]):
         else:
             self.app.exit()
 
+    def action_scroll_down(self) -> None:
+        timeline = self.query_one(DataTable)
+        half_timeline_height = round(timeline.scrollable_content_region.height / 2)
+        timeline.scroll_relative(y=half_timeline_height, animate=False)
+
+    def action_scroll_up(self) -> None:
+        timeline = self.query_one(DataTable)
+        half_timeline_height = round(timeline.scrollable_content_region.height / 2)
+        timeline.scroll_relative(y=-half_timeline_height, animate=False)
+
     def action_cursor_up(self) -> None:
         self.query_one(DataTable).action_cursor_up()
 
@@ -195,12 +207,13 @@ class TimelineNextPageMixin:
 
     def action_cursor_down(self: TimelineNextPageProtocol) -> None:
         timeline = self.query_one(DataTable)
-        timeline.action_cursor_down()
-        old_row_index = timeline.cursor_row
 
         if timeline.cursor_row == timeline.row_count - 1:
+            old_row_index = timeline.cursor_row
             self.action_update_timeline_old()
             timeline.move_cursor(row=old_row_index)
+
+        timeline.action_cursor_down()
 
 
 class BaseStatusTimeline(BaseTimeline[BaseStatus]):
