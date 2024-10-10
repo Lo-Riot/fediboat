@@ -89,7 +89,6 @@ class BaseTimeline(Screen, Generic[Base]):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
-        ("t", "open_thread", "Open thread"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_row"),
@@ -202,6 +201,10 @@ class TimelineNextPageMixin:
 
 
 class BaseStatusTimeline(BaseTimeline[BaseStatus]):
+    BINDINGS = [
+        ("t", "open_thread", "Open thread"),
+    ]
+
     def action_open_thread(self) -> None:
         timeline = self.query_one(DataTable)
         row_index = timeline.cursor_row
