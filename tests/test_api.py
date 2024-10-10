@@ -1,49 +1,10 @@
-from pydantic import TypeAdapter
+from unittest.mock import MagicMock
 import pytest
+
+from pydantic import TypeAdapter
 from fediboat.api.timelines import QueryParams, TimelineAPI, ThreadAPI, NotificationAPI
 from fediboat.entities import Status
 from fediboat.settings import AuthSettings
-
-
-class TimelineAPIMock(TimelineAPI[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Status]],
-        response_mock: str,
-    ):
-        self._response_mock = response_mock
-        super().__init__(settings, validator)
-
-    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
-        return self._response_mock
-
-
-class ThreadAPIMock(ThreadAPI):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        status: Status,
-        response_mock: str,
-    ):
-        self._response_mock = response_mock
-        super().__init__(settings, status)
-
-    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
-        return self._response_mock
-
-
-class NotificationAPIMock(NotificationAPI):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        response_mock: str,
-    ):
-        self._response_mock = response_mock
-        super().__init__(settings)
-
-    def _fetch_entities(self, api_endpoint: str, **query_params: QueryParams) -> str:
-        return self._response_mock
 
 
 @pytest.fixture
@@ -70,23 +31,21 @@ def settings() -> AuthSettings:
     )
 
 
-@pytest.fixture
-def home_api(
-    settings: AuthSettings,
-    timeline_statuses: str,
-    statuses_validator: TypeAdapter[list[Status]],
-) -> TimelineAPIMock:
-    return TimelineAPIMock(settings, statuses_validator, timeline_statuses)
-
-
 def test_home_api(
-    home_api: TimelineAPIMock,
     timeline_statuses: str,
+    settings: AuthSettings,
     statuses_validator: TypeAdapter[list[Status]],
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    home_api = TimelineAPI(settings, statuses_validator)
+    mock_api_response = MagicMock(return_value=timeline_statuses)
+    monkeypatch.setattr(home_api, "_fetch_entities", mock_api_response)
+
     expected_statuses = statuses_validator.validate_json(timeline_statuses)
     statuses = home_api.fetch_new()
 
+    # TODO: add api enpoints to the settings
+    mock_api_response.assert_called_with("/api/v1/timelines/home")
     assert len(expected_statuses) == 1
     assert len(statuses) == 1
     assert statuses[0] == expected_statuses[0]
