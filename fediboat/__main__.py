@@ -196,8 +196,11 @@ class TimelineNextPageMixin:
     def action_cursor_down(self: TimelineNextPageProtocol) -> None:
         timeline = self.query_one(DataTable)
         timeline.action_cursor_down()
+        old_row_index = timeline.cursor_row
+
         if timeline.cursor_row == timeline.row_count - 1:
             self.action_update_timeline_old()
+            timeline.move_cursor(row=old_row_index)
 
 
 class BaseStatusTimeline(BaseTimeline[BaseStatus]):
