@@ -32,7 +32,7 @@ class BaseAPI(Generic[Entity], ABC):
 
     @abstractmethod
     def fetch_new(self) -> list[Entity]:
-        """Returns new entities"""  # TODO: Add max statuses limit and clear the old ones
+        """Returns new entities"""
 
 
 class TimelineAPI(BaseAPI[Entity]):
@@ -48,25 +48,25 @@ class TimelineAPI(BaseAPI[Entity]):
         super().__init__(settings)
 
     def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
-        """Returns a new dict of query parameters.
+        """Return a new dict of query parameters.
         Override it to add custom parameters."""
         return query_params
 
     def fetch_new(self) -> list[Entity]:
-        """Returns previous page"""
-        query_params = self._get_query_params()
-        if len(self.entities) != 0:
-            query_params["min_id"] = self.entities[0].id
+        """Refresh the timeline, return the latest entities."""
 
+        query_params = self._get_query_params()
         new_statuses_json = self._fetch_entities(self.api_endpoint, **query_params)
         new_statuses = self.validator.validate_json(new_statuses_json)
-        new_statuses.extend(self.entities)
+        if len(new_statuses) == 0:
+            return self.entities
 
         self.entities = new_statuses
         return self.entities
 
     def fetch_old(self) -> list[Entity]:
-        """Returns next page"""
+        """Return the next page of entities."""
+
         query_params = self._get_query_params()
         if len(self.entities) != 0:
             query_params["max_id"] = self.entities[-1].id
