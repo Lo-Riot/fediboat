@@ -19,6 +19,7 @@ from textual.widgets import (
 
 from fediboat.api.timelines import (
     NotificationAPI,
+    PersonalAPI,
     PublicRemoteTimelineAPI,
     BaseAPI,
     ThreadAPI,
@@ -54,7 +55,7 @@ class SwitchTimeline(ModalScreen[str]):
         ("h", "switch('Home')", "Home"),
         ("l", "switch('Local')", "Local"),
         ("n", "switch('Notification')", "Notifications"),
-        ("p", "switch('')", "Personal"),
+        ("p", "switch('Personal')", "Personal"),
         ("b", "switch('')", "Bookmarks"),
         ("c", "switch('')", "Conversations"),
         ("s", "switch('')", "Lists"),
@@ -126,14 +127,19 @@ class BaseTimeline(Screen, Generic[Base]):
                     TimelineAPI[Status](
                         self.mastodon_api.settings,
                         validator=TypeAdapter(list[Status]),
-                    )
+                    ),
                 ),
-                "Local": StatusTimeline(LocalTimelineAPI(self.mastodon_api.settings)),
+                "Local": StatusTimeline(
+                    LocalTimelineAPI(self.mastodon_api.settings),
+                ),
                 "Global": StatusTimeline(
-                    PublicRemoteTimelineAPI(self.mastodon_api.settings)
+                    PublicRemoteTimelineAPI(self.mastodon_api.settings),
                 ),
                 "Notification": NotificationTimeline(
-                    NotificationAPI(self.mastodon_api.settings)
+                    NotificationAPI(self.mastodon_api.settings),
+                ),
+                "Personal": PersonalTimeline(
+                    PersonalAPI(self.mastodon_api.settings),
                 ),
             }
             timeline = timelines[timeline_name]
@@ -279,6 +285,13 @@ class StatusTimeline(
 
 
 class ThreadTimeline(BaseStatusTimeline[ThreadAPI]):
+    pass
+
+
+class PersonalTimeline(
+    TimelineNextPageMixin,
+    BaseStatusTimeline[PersonalAPI],
+):
     pass
 
 

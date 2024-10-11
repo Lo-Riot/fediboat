@@ -48,6 +48,7 @@ def _login_account() -> AuthSettings:
     full_username = f"{user['acct']}@{instance_domain}"
 
     auth_settings = AuthSettings(
+        user["id"],
         instance_url,
         instance_domain,
         full_username,

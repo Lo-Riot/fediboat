@@ -41,7 +41,6 @@ class TimelineAPI(BaseAPI[Entity]):
         settings: AuthSettings,
         validator: TypeAdapter[list[Entity]],
         api_endpoint: str = "/api/v1/timelines/home",
-        **query_params: QueryParams,
     ):
         self.api_endpoint = api_endpoint
         self.validator = validator
@@ -132,3 +131,12 @@ class ThreadAPI(BaseAPI[Status]):
 
         self.entities = thread
         return self.entities
+
+
+class PersonalAPI(TimelineAPI[Status]):
+    def __init__(self, settings: AuthSettings):
+        super().__init__(
+            settings,
+            TypeAdapter(list[Status]),
+            f"/api/v1/accounts/{settings.id}/statuses",
+        )

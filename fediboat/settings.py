@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class AuthSettings:
     """Settings for the current active user"""
 
+    id: str
     instance_url: str
     instance_domain: str
     full_username: str
@@ -34,6 +35,7 @@ def load_settings(auth_settings_file: Path) -> Settings:
     full_username = auth_settings_json["current"]
     user = auth_settings_json["users"][full_username]
 
+    user_id = user["id"]
     instance_domain = user["instance"]
     instance_url = "https://" + instance_domain
     access_token = user["access_token"]
@@ -43,6 +45,7 @@ def load_settings(auth_settings_file: Path) -> Settings:
     client_secret = app["client_secret"]
 
     auth_settings = AuthSettings(
+        user_id,
         instance_url,
         instance_domain,
         full_username,
@@ -66,6 +69,7 @@ def create_auth_settings(auth_settings_file: Path, auth_settings: AuthSettings) 
             },
             "users": {
                 auth_settings.full_username: {
+                    "id": auth_settings.id,
                     "instance": auth_settings.instance_domain,
                     "access_token": auth_settings.access_token,
                 },
