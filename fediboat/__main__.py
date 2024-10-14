@@ -135,7 +135,7 @@ class BaseTimeline(Screen, Generic[Base]):
                 "Notification": NotificationTimeline(
                     NotificationAPI(self.mastodon_api.settings),
                 ),
-                "Personal": PersonalTimeline(
+                "Personal": StatusTimeline(
                     PersonalAPI(self.mastodon_api.settings),
                 ),
             }
@@ -282,13 +282,6 @@ class StatusTimeline(
 
 
 class ThreadTimeline(BaseStatusTimeline[ThreadAPI]):
-    pass
-
-
-class PersonalTimeline(
-    TimelineNextPageMixin,
-    BaseStatusTimeline[PersonalAPI],
-):
     pass
 
 
