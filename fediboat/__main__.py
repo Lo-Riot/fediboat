@@ -18,13 +18,13 @@ from textual.widgets import (
 )
 
 from fediboat.api.timelines import (
+    PublicTimelineAPI,
+    StatusTimelineAPI,
     NotificationAPI,
     PersonalAPI,
-    PublicRemoteTimelineAPI,
     BaseAPI,
     ThreadAPI,
     TimelineAPI,
-    LocalTimelineAPI,
 )
 from fediboat.cli import cli
 from fediboat.entities import Notification, Status
@@ -124,16 +124,13 @@ class BaseTimeline(Screen, Generic[Base]):
         def switch_timeline(timeline_name: str):
             timelines: dict[str, Screen] = {
                 "Home": StatusTimeline(
-                    TimelineAPI[Status](
-                        self.mastodon_api.settings,
-                        validator=TypeAdapter(list[Status]),
-                    ),
+                    StatusTimelineAPI(self.mastodon_api.settings),
                 ),
                 "Local": StatusTimeline(
-                    LocalTimelineAPI(self.mastodon_api.settings),
+                    PublicTimelineAPI(self.mastodon_api.settings, local=True),
                 ),
                 "Global": StatusTimeline(
-                    PublicRemoteTimelineAPI(self.mastodon_api.settings),
+                    PublicTimelineAPI(self.mastodon_api.settings, remote=True),
                 ),
                 "Notification": NotificationTimeline(
                     NotificationAPI(self.mastodon_api.settings),
@@ -279,7 +276,7 @@ class NotificationTimeline(
 
 class StatusTimeline(
     TimelineNextPageMixin,
-    BaseStatusTimeline[TimelineAPI[Status]],
+    BaseStatusTimeline[StatusTimelineAPI],
 ):
     pass
 
@@ -298,7 +295,7 @@ class PersonalTimeline(
 class FediboatApp(App):
     """Fediboat - Mastodon TUI client"""
 
-    def __init__(self, mastodon_api: TimelineAPI[Status]):
+    def __init__(self, mastodon_api: StatusTimelineAPI):
         self.mastodon_api = mastodon_api
         super().__init__()
 
@@ -313,9 +310,7 @@ class FediboatApp(App):
 @click.pass_context
 def tui(ctx):
     settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
-    timeline_api = TimelineAPI[Status](
-        settings.auth, validator=TypeAdapter(list[Status])
-    )
+    timeline_api = StatusTimelineAPI(settings.auth)
     app = FediboatApp(timeline_api)
     app.run()
 

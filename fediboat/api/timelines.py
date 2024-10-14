@@ -40,21 +40,18 @@ class TimelineAPI(BaseAPI[Entity]):
         self,
         settings: AuthSettings,
         validator: TypeAdapter[list[Entity]],
-        api_endpoint: str = "/api/v1/timelines/home",
+        api_endpoint: str,
+        **default_query_params: QueryParams,
     ):
         self.api_endpoint = api_endpoint
         self.validator = validator
+        self._default_query_params = default_query_params
         super().__init__(settings)
-
-    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
-        """Return a new dict of query parameters.
-        Override it to add custom parameters."""
-        return query_params
 
     def fetch_new(self) -> list[Entity]:
         """Refresh the timeline, return the latest entities."""
 
-        query_params = self._get_query_params()
+        query_params = self._default_query_params.copy()
         new_statuses_json = self._fetch_entities(self.api_endpoint, **query_params)
         new_statuses = self.validator.validate_json(new_statuses_json)
         if len(new_statuses) == 0:
@@ -66,7 +63,7 @@ class TimelineAPI(BaseAPI[Entity]):
     def fetch_old(self) -> list[Entity]:
         """Return the next page of entities."""
 
-        query_params = self._get_query_params()
+        query_params = self._default_query_params.copy()
         if len(self.entities) != 0:
             query_params["max_id"] = self.entities[-1].id
 
@@ -76,25 +73,33 @@ class TimelineAPI(BaseAPI[Entity]):
         return self.entities
 
 
-class PublicTimelineAPI(TimelineAPI[Status]):
-    def __init__(self, settings: AuthSettings):
+class StatusTimelineAPI(TimelineAPI[Status]):
+    def __init__(
+        self,
+        settings: AuthSettings,
+        api_endpoint="/api/v1/timelines/home",
+        **default_query_params: QueryParams,
+    ):
         super().__init__(
             settings,
             validator=TypeAdapter(list[Status]),
-            api_endpoint="/api/v1/timelines/public",
+            api_endpoint=api_endpoint,
+            **default_query_params,
         )
 
 
-class PublicRemoteTimelineAPI(PublicTimelineAPI):
-    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
-        query_params["remote"] = True
-        return super()._get_query_params(**query_params)
-
-
-class LocalTimelineAPI(PublicTimelineAPI):
-    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
-        query_params["local"] = True
-        return super()._get_query_params(**query_params)
+class PublicTimelineAPI(StatusTimelineAPI):
+    def __init__(
+        self,
+        settings: AuthSettings,
+        api_endpoint="/api/v1/timelines/public",
+        **default_query_params: QueryParams,
+    ):
+        super().__init__(
+            settings,
+            api_endpoint=api_endpoint,
+            **default_query_params,
+        )
 
 
 class NotificationAPI(TimelineAPI[Notification]):
@@ -103,11 +108,8 @@ class NotificationAPI(TimelineAPI[Notification]):
             settings,
             validator=TypeAdapter(list[Notification]),
             api_endpoint="/api/v1/notifications",
+            limit=20,
         )
-
-    def _get_query_params(self, **query_params: QueryParams) -> dict[str, QueryParams]:
-        query_params["limit"] = 20
-        return super()._get_query_params(**query_params)
 
 
 class ThreadAPI(BaseAPI[Status]):
@@ -133,10 +135,8 @@ class ThreadAPI(BaseAPI[Status]):
         return self.entities
 
 
-class PersonalAPI(TimelineAPI[Status]):
+class PersonalAPI(StatusTimelineAPI):
     def __init__(self, settings: AuthSettings):
         super().__init__(
-            settings,
-            TypeAdapter(list[Status]),
-            f"/api/v1/accounts/{settings.id}/statuses",
+            settings, api_endpoint=f"/api/v1/accounts/{settings.id}/statuses"
         )
