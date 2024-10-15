@@ -1,4 +1,4 @@
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, NamedTuple, Protocol, TypeVar
 import click
 
 from markdownify import markdownify as md
@@ -19,6 +19,7 @@ from textual.widgets import (
 
 from fediboat.api.timelines import (
     PublicTimelineAPI,
+    QueryParams,
     StatusTimelineAPI,
     NotificationAPI,
     PersonalAPI,
@@ -54,7 +55,7 @@ class SwitchTimeline(ModalScreen[str]):
     BINDINGS = [
         ("h", "switch('Home')", "Home"),
         ("l", "switch('Local')", "Local"),
-        ("n", "switch('Notification')", "Notifications"),
+        ("n", "switch('Notifications')", "Notifications"),
         ("p", "switch('Personal')", "Personal"),
         ("b", "switch('')", "Bookmarks"),
         ("c", "switch('')", "Conversations"),
@@ -86,6 +87,12 @@ class StatusContent(Screen):
         yield Footer()
 
 
+class TimelineScreenData(NamedTuple):
+    screen: type["BaseTimeline"]
+    mastodon_api: type[BaseAPI]
+    query_params: dict[str, QueryParams] | None = None
+
+
 class BaseTimeline(Screen, Generic[Base]):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
@@ -100,8 +107,9 @@ class BaseTimeline(Screen, Generic[Base]):
 
     CSS_PATH = "timeline.tcss"
 
-    def __init__(self, mastodon_api: Base):
+    def __init__(self, mastodon_api: Base, timelines: dict[str, TimelineScreenData]):
         self.mastodon_api = mastodon_api
+        self.timelines = timelines
         super().__init__()
 
     def on_mount(self) -> None:
@@ -121,25 +129,18 @@ class BaseTimeline(Screen, Generic[Base]):
         yield Footer()
 
     def action_switch_timeline(self) -> None:
-        def switch_timeline(timeline_name: str):
-            timelines: dict[str, Screen] = {
-                "Home": StatusTimeline(
-                    StatusTimelineAPI(self.mastodon_api.settings),
-                ),
-                "Local": StatusTimeline(
-                    PublicTimelineAPI(self.mastodon_api.settings, local=True),
-                ),
-                "Global": StatusTimeline(
-                    PublicTimelineAPI(self.mastodon_api.settings, remote=True),
-                ),
-                "Notification": NotificationTimeline(
-                    NotificationAPI(self.mastodon_api.settings),
-                ),
-                "Personal": StatusTimeline(
-                    PersonalAPI(self.mastodon_api.settings),
-                ),
-            }
-            timeline = timelines[timeline_name]
+        def switch_timeline(timeline_name: str | None):
+            if timeline_name is None:
+                return
+
+            screen, mastodon_api, query_params = self.timelines[timeline_name]
+            if query_params is None:
+                query_params = {}
+
+            timeline = screen(
+                mastodon_api(self.mastodon_api.settings, **query_params),
+                self.timelines,
+            )
             timeline.sub_title = f"{timeline_name} Timeline"
             self.app.switch_screen(timeline)
 
@@ -156,8 +157,10 @@ class BaseTimeline(Screen, Generic[Base]):
         if event.character is None or not event.character.isdigit():
             return
 
-        def jump_to_row(index: int):
-            self.query_one(DataTable).move_cursor(row=index - 1)
+        def jump_to_row(index: int | None):
+            if index is not None:
+                index -= 1
+            self.query_one(DataTable).move_cursor(row=index)
 
         self.app.push_screen(Jump(event.character), jump_to_row)
 
@@ -230,7 +233,7 @@ class BaseStatusTimeline(BaseTimeline[BaseStatus]):
         selected_status = self.mastodon_api.get_entity(row_index)
 
         thread_api = ThreadAPI(self.mastodon_api.settings, selected_status)
-        self.app.push_screen(ThreadTimeline(thread_api))
+        self.app.push_screen(ThreadTimeline(thread_api, self.timelines))
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
@@ -288,15 +291,18 @@ class ThreadTimeline(BaseStatusTimeline[ThreadAPI]):
 class FediboatApp(App):
     """Fediboat - Mastodon TUI client"""
 
-    def __init__(self, mastodon_api: StatusTimelineAPI):
+    def __init__(
+        self, mastodon_api: StatusTimelineAPI, timelines: dict[str, TimelineScreenData]
+    ):
         self.mastodon_api = mastodon_api
+        self.timelines = timelines
         super().__init__()
 
     def on_mount(self) -> None:
         self.title = "Fediboat"
         self.sub_title = "Home Timeline"
         self.install_screen(StatusContent(), name="status")
-        self.push_screen(StatusTimeline(self.mastodon_api))
+        self.push_screen(StatusTimeline(self.mastodon_api, self.timelines))
 
 
 @cli.command()
@@ -304,7 +310,31 @@ class FediboatApp(App):
 def tui(ctx):
     settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
     timeline_api = StatusTimelineAPI(settings.auth)
-    app = FediboatApp(timeline_api)
+    timelines: dict[str, TimelineScreenData] = {
+        "Home": TimelineScreenData(
+            StatusTimeline,
+            StatusTimelineAPI,
+        ),
+        "Local": TimelineScreenData(
+            StatusTimeline,
+            PublicTimelineAPI,
+            {"local": True},
+        ),
+        "Global": TimelineScreenData(
+            StatusTimeline,
+            PublicTimelineAPI,
+            {"remote": True},
+        ),
+        "Notifications": TimelineScreenData(
+            NotificationTimeline,
+            NotificationAPI,
+        ),
+        "Personal": TimelineScreenData(
+            StatusTimeline,
+            PersonalAPI,
+        ),
+    }
+    app = FediboatApp(timeline_api, timelines)
     app.run()
 
 
