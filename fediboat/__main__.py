@@ -18,9 +18,10 @@ from textual.widgets import (
 )
 
 from fediboat.api.timelines import (
+    APIClient,
     PublicTimelineAPI,
     QueryParams,
-    StatusTimelineAPI,
+    HomeTimelineAPI,
     NotificationAPI,
     PersonalAPI,
     BaseAPI,
@@ -90,7 +91,7 @@ class StatusContent(Screen):
 class TimelineScreenData(NamedTuple):
     screen: type["BaseTimeline"]
     mastodon_api: type[BaseAPI]
-    query_params: dict[str, QueryParams] | None = None
+    client: APIClient | None = None
 
 
 class BaseTimeline(Screen, Generic[Base]):
@@ -116,7 +117,6 @@ class BaseTimeline(Screen, Generic[Base]):
         timeline = self.query_one(DataTable)
 
         timeline.cursor_background_priority = "renderable"
-
         timeline.add_columns("id", "date")
         timeline.add_column("user", width=25)
         timeline.add_column("title", width=50)
@@ -132,13 +132,10 @@ class BaseTimeline(Screen, Generic[Base]):
         def switch_timeline(timeline_name: str | None):
             if timeline_name is None:
                 return
-
-            screen, mastodon_api, query_params = self.timelines[timeline_name]
-            if query_params is None:
-                query_params = {}
+            screen, mastodon_api, client = self.timelines[timeline_name]
 
             timeline = screen(
-                mastodon_api(self.mastodon_api.settings, **query_params),
+                mastodon_api(settings=self.mastodon_api.settings, client=client),
                 self.timelines,
             )
             timeline.sub_title = f"{timeline_name} Timeline"
@@ -279,7 +276,7 @@ class NotificationTimeline(
 
 class StatusTimeline(
     TimelineNextPageMixin,
-    BaseStatusTimeline[StatusTimelineAPI],
+    BaseStatusTimeline[TimelineAPI[Status]],
 ):
     pass
 
@@ -292,7 +289,9 @@ class FediboatApp(App):
     """Fediboat - Mastodon TUI client"""
 
     def __init__(
-        self, mastodon_api: StatusTimelineAPI, timelines: dict[str, TimelineScreenData]
+        self,
+        mastodon_api: TimelineAPI[Status],
+        timelines: dict[str, TimelineScreenData],
     ):
         self.mastodon_api = mastodon_api
         self.timelines = timelines
@@ -309,25 +308,26 @@ class FediboatApp(App):
 @click.pass_context
 def tui(ctx):
     settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
-    timeline_api = StatusTimelineAPI(settings.auth)
+    timeline_api = HomeTimelineAPI(settings.auth)
     timelines: dict[str, TimelineScreenData] = {
         "Home": TimelineScreenData(
             StatusTimeline,
-            StatusTimelineAPI,
+            HomeTimelineAPI,
         ),
         "Local": TimelineScreenData(
             StatusTimeline,
             PublicTimelineAPI,
-            {"local": True},
+            APIClient(settings.auth, local=True),
         ),
         "Global": TimelineScreenData(
             StatusTimeline,
             PublicTimelineAPI,
-            {"remote": True},
+            APIClient(settings.auth, remote=True),
         ),
         "Notifications": TimelineScreenData(
             NotificationTimeline,
             NotificationAPI,
+            APIClient(settings.auth, limit=20),
         ),
         "Personal": TimelineScreenData(
             StatusTimeline,
