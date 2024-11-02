@@ -1,3 +1,4 @@
+from typing import NamedTuple, Sequence
 from unittest.mock import MagicMock
 import pytest
 
@@ -15,6 +16,13 @@ from fediboat.entities import BaseEntity, Notification, Status
 from fediboat.settings import AuthSettings
 
 
+class ExpectedResponse(NamedTuple):
+    new_json: str
+    new_validated: Sequence[BaseEntity]
+    old_json: str
+    old_validated: Sequence[BaseEntity]
+
+
 @pytest.fixture
 def statuses_validator() -> TypeAdapter[list[Status]]:
     return TypeAdapter(list[Status])
@@ -28,19 +36,45 @@ def notifications_validator() -> TypeAdapter[list[Notification]]:
 @pytest.fixture
 def expected_statuses(
     statuses_validator: TypeAdapter[list[Status]],
-) -> tuple[str, list[Status]]:
+) -> ExpectedResponse:
     with open("tests/data/statuses.json") as f:
-        response_mock = f.read()
-    return response_mock, statuses_validator.validate_json(response_mock)
+        new_statuses_json = f.read()
+    new_statuses_validated = statuses_validator.validate_json(new_statuses_json)
+
+    with open("tests/data/old_statuses.json") as f:
+        old_statuses_json = f.read()
+    old_statuses_validated = statuses_validator.validate_json(old_statuses_json)
+
+    return ExpectedResponse(
+        new_statuses_json,
+        new_statuses_validated,
+        old_statuses_json,
+        old_statuses_validated,
+    )
 
 
 @pytest.fixture
 def expected_notifications(
     notifications_validator: TypeAdapter[list[Notification]],
-) -> tuple[str, list[Notification]]:
+) -> ExpectedResponse:
     with open("tests/data/notifications.json") as f:
-        response_mock = f.read()
-    return response_mock, notifications_validator.validate_json(response_mock)
+        new_notifications_json = f.read()
+    new_notifications_validated = notifications_validator.validate_json(
+        new_notifications_json
+    )
+
+    with open("tests/data/old_notifications.json") as f:
+        old_notifications_json = f.read()
+    old_notifications_validated = notifications_validator.validate_json(
+        old_notifications_json
+    )
+
+    return ExpectedResponse(
+        new_notifications_json,
+        new_notifications_validated,
+        old_notifications_json,
+        old_notifications_validated,
+    )
 
 
 @pytest.fixture
@@ -72,21 +106,21 @@ def test_timeline_api(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ):
-    expected_entities: tuple[str, list[BaseEntity]] = request.getfixturevalue(
+    expected_response: ExpectedResponse = request.getfixturevalue(
         expected_entities_fixture
     )
-    expected_json_entities, expected_validated_entities = expected_entities
 
-    get_request_mock = MagicMock(return_value=expected_json_entities)
+    get_request_mock = MagicMock(return_value=expected_response.new_json)
     client_mock = MagicMock(spec_set=APIClient, get=get_request_mock)
     timeline_api = timeline_api_cls(settings=settings, client=client_mock)
 
     response_entities = timeline_api.fetch_new()
     get_request_mock.assert_called_with(timeline_api.api_endpoint)
     assert len(response_entities) == 1
-    assert len(expected_validated_entities) == 1
-    assert response_entities[0] == expected_validated_entities[0]
+    assert len(expected_response.new_validated) == 1
+    assert response_entities[0] == expected_response.new_validated[0]
 
+    get_request_mock.return_value = expected_response.old_json
     response_entities = timeline_api.fetch_old()
     get_request_mock.assert_called_with(
         timeline_api.api_endpoint,
