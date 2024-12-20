@@ -1,0 +1,64 @@
+{
+  "id": "10987654324",
+  "created_at": "2024-12-02T10:00:00.000Z",
+  "in_reply_to_id": "10987654321",
+  "in_reply_to_account_id": "12345",
+  "sensitive": false,
+  "spoiler_text": "Spoiler for the status",
+  "visibility": "public",
+  "language": "en",
+  "uri": "https://example.com/users/main_user/statuses/10987654324",
+  "url": "https://example.com/@main_user/10987654324",
+  "replies_count": 3,
+  "reblogs_count": 1,
+  "favourites_count": 10,
+  "edited_at": null,
+  "content": "<p>This is the main status for which the context is provided.</p>",
+  "reblog": null,
+  "application": {
+    "name": "MainApp",
+    "website": "https://mainapp.example.com"
+  },
+  "account": {
+    "id": "67890",
+    "username": "main_user",
+    "acct": "main_user@example.com",
+    "display_name": "Main User",
+    "locked": false,
+    "bot": false,
+    "discoverable": true,
+    "group": false,
+    "created_at": "2023-04-01T12:00:00.000Z",
+    "note": "<p>This is the main user's bio.</p>",
+    "url": "https://example.com/@main_user",
+    "avatar": "https://example.com/main_avatar.jpg",
+    "avatar_static": "https://example.com/main_avatar.jpg",
+    "header": "https://example.com/main_header.jpg",
+    "header_static": "https://example.com/main_header.jpg",
+    "followers_count": 200,
+    "following_count": 150,
+    "statuses_count": 20,
+    "last_status_at": "2024-12-02",
+    "emojis": [],
+    "fields": []
+  },
+  "media_attachments": [],
+  "mentions": [
+    {
+      "id": "54321",
+      "username": "another_user",
+      "url": "https://example.com/@another_user",
+      "acct": "another_user@example.com"
+    }
+  ],
+  "tags": [
+    {
+      "name": "ExampleTag",
+      "url": "https://example.com/t/ExampleTag"
+    }
+  ],
+  "emojis": [],
+  "card": null,
+  "poll": null,
+  "quote": null
+}
