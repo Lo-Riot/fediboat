@@ -19,8 +19,8 @@ from textual.widgets import (
 
 from fediboat.api.timelines import (
     APIClient,
+    BookmarksAPI,
     PublicTimelineAPI,
-    QueryParams,
     HomeTimelineAPI,
     NotificationAPI,
     PersonalAPI,
@@ -58,7 +58,7 @@ class SwitchTimeline(ModalScreen[str]):
         ("l", "switch('Local')", "Local"),
         ("n", "switch('Notifications')", "Notifications"),
         ("p", "switch('Personal')", "Personal"),
-        ("b", "switch('')", "Bookmarks"),
+        ("b", "switch('Bookmarks')", "Bookmarks"),
         ("c", "switch('')", "Conversations"),
         ("s", "switch('')", "Lists"),
         ("g", "switch('Global')", "Global"),
@@ -332,6 +332,10 @@ def tui(ctx):
         "Personal": TimelineScreenData(
             StatusTimeline,
             PersonalAPI,
+        ),
+        "Bookmarks": TimelineScreenData(
+            StatusTimeline,
+            BookmarksAPI,
         ),
     }
     app = FediboatApp(timeline_api, timelines)

@@ -7,6 +7,7 @@ from pydantic import TypeAdapter
 
 from fediboat.api.timelines import (
     APIClient,
+    BookmarksAPI,
     HomeTimelineAPI,
     NotificationAPI,
     PersonalAPI,
@@ -133,6 +134,7 @@ def settings() -> AuthSettings:
         (HomeTimelineAPI, "expected_statuses"),
         (PublicTimelineAPI, "expected_statuses"),
         (PersonalAPI, "expected_statuses"),
+        (BookmarksAPI, "expected_statuses"),
         (NotificationAPI, "expected_notifications"),
     ],
 )
@@ -152,21 +154,24 @@ def test_timeline_api(
     timeline_api = timeline_api_cls(settings=settings, client=client_mock)
 
     response_entities = timeline_api.fetch_new()
-    get_request_mock.assert_called_with(timeline_api.api_endpoint)
+    get_request_mock.assert_called_with(
+        settings.instance_url + timeline_api.api_endpoint
+    )
     assert len(response_entities) == 1
     assert len(expected_response.new.validated) == 1
     assert response_entities[0] == expected_response.new.validated[0]
 
-    get_request_mock.return_value = expected_response.old.json
+    client_mock.get_next.return_value = expected_response.old.json
     response_entities = timeline_api.fetch_old()
     get_request_mock.assert_called_with(
-        timeline_api.api_endpoint,
-        max_id=response_entities[0].id,
+        settings.instance_url + timeline_api.api_endpoint,
     )
     assert len(response_entities) == 2
 
     response_entities = timeline_api.fetch_new()
-    get_request_mock.assert_called_with(timeline_api.api_endpoint)
+    get_request_mock.assert_called_with(
+        settings.instance_url + timeline_api.api_endpoint
+    )
     assert len(response_entities) == 1
 
 

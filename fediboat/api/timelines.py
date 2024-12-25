@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeAlias, TypeVar
-from pydantic import TypeAdapter
 
 import requests
+from pydantic import TypeAdapter
+from textual import log
 
 from fediboat.api.auth import get_headers
-from fediboat.settings import AuthSettings
 from fediboat.entities import BaseEntity, Context, Notification, Status
+from fediboat.settings import AuthSettings
 
 Entity = TypeVar("Entity", bound=BaseEntity)
 QueryParams: TypeAlias = str | int | bool
@@ -17,14 +18,23 @@ class APIClient:
         self.settings = settings
         self._default_query_params = default_query_params
         self._headers = get_headers(self.settings.access_token)
+        self._next_link = ""
 
-    def get(self, api_endpoint: str, **query_params: QueryParams) -> str:
-        request_params = {**self._default_query_params, **query_params}
-        return requests.get(
-            self.settings.instance_url + api_endpoint,
-            params=request_params,
+    def get(self, api_endpoint: str) -> str:
+        resp = requests.get(
+            api_endpoint,
+            params=self._default_query_params,
             headers=self._headers,
-        ).text
+        )
+
+        if resp.links.get("next"):
+            self._next_link = resp.links["next"]["url"]
+            log("Next link:", self._next_link)
+        return resp.text
+
+    def get_next(self) -> str:
+        # TODO: Handle exception if _next_link == ''
+        return self.get(self._next_link)
 
 
 class BaseAPI(Generic[Entity], ABC):
@@ -70,7 +80,9 @@ class TimelineAPI(BaseAPI[Entity]):
     def fetch_new(self) -> list[Entity]:
         """Refresh the timeline, return the latest entities."""
 
-        new_statuses_json = self.client.get(self.api_endpoint)
+        new_statuses_json = self.client.get(
+            self.settings.instance_url + self.api_endpoint
+        )
         new_statuses = self.validator.validate_json(new_statuses_json)
         if len(new_statuses) == 0:
             return self.entities
@@ -81,11 +93,7 @@ class TimelineAPI(BaseAPI[Entity]):
     def fetch_old(self) -> list[Entity]:
         """Return the next page of entities."""
 
-        query_params: dict[str, QueryParams] = {}
-        if len(self.entities) != 0:
-            query_params["max_id"] = self.entities[-1].id
-
-        new_statuses_json = self.client.get(self.api_endpoint, **query_params)
+        new_statuses_json = self.client.get_next()
         new_statuses = self.validator.validate_json(new_statuses_json)
         self.entities.extend(new_statuses)
         return self.entities
@@ -151,7 +159,7 @@ class ThreadAPI(BaseAPI[Status]):
 
     def fetch_new(self) -> list[Status]:
         thread_context_json = self.client.get(
-            f"/api/v1/statuses/{self.status.id}/context"
+            f"{self.settings.instance_url}/api/v1/statuses/{self.status.id}/context"
         )
         thread_context = Context.model_validate_json(thread_context_json)
 
@@ -174,5 +182,21 @@ class PersonalAPI(TimelineAPI[Status]):
             settings,
             validator=validator,
             api_endpoint=f"/api/v1/accounts/{settings.id}/statuses",
+            client=client,
+        )
+
+
+class BookmarksAPI(TimelineAPI[Status]):
+    def __init__(
+        self,
+        settings: AuthSettings,
+        validator: TypeAdapter[list[Status]] = TypeAdapter(list[Status]),
+        api_endpoint: str = "/api/v1/bookmarks",
+        client: APIClient | None = None,
+    ):
+        super().__init__(
+            settings,
+            validator=validator,
+            api_endpoint=api_endpoint,
             client=client,
         )
