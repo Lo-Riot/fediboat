@@ -19,22 +19,22 @@ from textual.widgets import (
 
 from fediboat.api.timelines import (
     APIClient,
-    BookmarksAPI,
-    PublicTimelineAPI,
-    HomeTimelineAPI,
-    NotificationAPI,
-    PersonalAPI,
-    BaseAPI,
-    ThreadAPI,
-    TimelineAPI,
+    BookmarksFetcher,
+    EntityFetcher,
+    PublicTimelineFetcher,
+    HomeTimelineFetcher,
+    NotificationFetcher,
+    PersonalTimelineFetcher,
+    ThreadFetcher,
+    TimelineFetcher,
 )
 from fediboat.cli import cli
 from fediboat.entities import Notification, Status
 from fediboat.settings import load_settings
 
-Base = TypeVar("Base", bound=BaseAPI, covariant=True)
-BaseStatus = TypeVar("BaseStatus", bound=BaseAPI[Status], covariant=True)
-Timeline = TypeVar("Timeline", bound=TimelineAPI, covariant=True)
+Fetcher = TypeVar("Fetcher", bound=EntityFetcher, covariant=True)
+StatusFetcher = TypeVar("StatusFetcher", bound=EntityFetcher[Status], covariant=True)
+Timeline = TypeVar("Timeline", bound=TimelineFetcher, covariant=True)
 
 
 class Jump(ModalScreen[int]):
@@ -90,14 +90,15 @@ class StatusContent(Screen):
 
 class TimelineScreenData(NamedTuple):
     screen: type["BaseTimeline"]
-    mastodon_api: type[BaseAPI]
+    mastodon_api: type[EntityFetcher]
     client: APIClient | None = None
 
 
-class BaseTimeline(Screen, Generic[Base]):
+class BaseTimeline(Screen, Generic[Fetcher]):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
+        ("p", "post_status", "Post"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_row"),
@@ -108,7 +109,7 @@ class BaseTimeline(Screen, Generic[Base]):
 
     CSS_PATH = "timeline.tcss"
 
-    def __init__(self, mastodon_api: Base, timelines: dict[str, TimelineScreenData]):
+    def __init__(self, mastodon_api: Fetcher, timelines: dict[str, TimelineScreenData]):
         self.mastodon_api = mastodon_api
         self.timelines = timelines
         super().__init__()
@@ -190,7 +191,7 @@ class BaseTimeline(Screen, Generic[Base]):
 
 class TimelineNextPageProtocol(Protocol):
     @property
-    def mastodon_api(self) -> TimelineAPI: ...
+    def mastodon_api(self) -> TimelineFetcher: ...
 
     def _add_rows(self) -> None: ...
 
@@ -219,7 +220,7 @@ class TimelineNextPageMixin:
         timeline.action_cursor_down()
 
 
-class BaseStatusTimeline(BaseTimeline[BaseStatus]):
+class BaseStatusTimeline(BaseTimeline[StatusFetcher]):
     BINDINGS = [
         ("t", "open_thread", "Open thread"),
     ]
@@ -229,7 +230,7 @@ class BaseStatusTimeline(BaseTimeline[BaseStatus]):
         row_index = timeline.cursor_row
         selected_status = self.mastodon_api.get_entity(row_index)
 
-        thread_api = ThreadAPI(self.mastodon_api.settings, selected_status)
+        thread_api = ThreadFetcher(self.mastodon_api.settings, selected_status)
         self.app.push_screen(ThreadTimeline(thread_api, self.timelines))
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
@@ -254,7 +255,7 @@ class BaseStatusTimeline(BaseTimeline[BaseStatus]):
 
 class NotificationTimeline(
     TimelineNextPageMixin,
-    BaseTimeline[TimelineAPI[Notification]],
+    BaseTimeline[TimelineFetcher[Notification]],
 ):
     def _add_rows(self) -> None:
         timeline = self.query_one(DataTable)
@@ -276,12 +277,12 @@ class NotificationTimeline(
 
 class StatusTimeline(
     TimelineNextPageMixin,
-    BaseStatusTimeline[TimelineAPI[Status]],
+    BaseStatusTimeline[TimelineFetcher[Status]],
 ):
     pass
 
 
-class ThreadTimeline(BaseStatusTimeline[ThreadAPI]):
+class ThreadTimeline(BaseStatusTimeline[ThreadFetcher]):
     pass
 
 
@@ -290,7 +291,7 @@ class FediboatApp(App):
 
     def __init__(
         self,
-        mastodon_api: TimelineAPI[Status],
+        mastodon_api: TimelineFetcher[Status],
         timelines: dict[str, TimelineScreenData],
     ):
         self.mastodon_api = mastodon_api
@@ -308,34 +309,34 @@ class FediboatApp(App):
 @click.pass_context
 def tui(ctx):
     settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
-    timeline_api = HomeTimelineAPI(settings.auth)
+    timeline_api = HomeTimelineFetcher(settings.auth)
     timelines: dict[str, TimelineScreenData] = {
         "Home": TimelineScreenData(
             StatusTimeline,
-            HomeTimelineAPI,
+            HomeTimelineFetcher,
         ),
         "Local": TimelineScreenData(
             StatusTimeline,
-            PublicTimelineAPI,
+            PublicTimelineFetcher,
             APIClient(settings.auth, local=True),
         ),
         "Global": TimelineScreenData(
             StatusTimeline,
-            PublicTimelineAPI,
+            PublicTimelineFetcher,
             APIClient(settings.auth, remote=True),
         ),
         "Notifications": TimelineScreenData(
             NotificationTimeline,
-            NotificationAPI,
+            NotificationFetcher,
             APIClient(settings.auth, limit=20),
         ),
         "Personal": TimelineScreenData(
             StatusTimeline,
-            PersonalAPI,
+            PersonalTimelineFetcher,
         ),
         "Bookmarks": TimelineScreenData(
             StatusTimeline,
-            BookmarksAPI,
+            BookmarksFetcher,
         ),
     }
     app = FediboatApp(timeline_api, timelines)

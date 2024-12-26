@@ -7,13 +7,13 @@ from pydantic import TypeAdapter
 
 from fediboat.api.timelines import (
     APIClient,
-    BookmarksAPI,
-    HomeTimelineAPI,
-    NotificationAPI,
-    PersonalAPI,
-    PublicTimelineAPI,
-    ThreadAPI,
-    TimelineAPI,
+    BookmarksFetcher,
+    HomeTimelineFetcher,
+    NotificationFetcher,
+    PersonalTimelineFetcher,
+    PublicTimelineFetcher,
+    ThreadFetcher,
+    TimelineFetcher,
 )
 from fediboat.entities import BaseEntity, Context, Notification, Status
 from fediboat.settings import AuthSettings
@@ -131,15 +131,15 @@ def settings() -> AuthSettings:
 @pytest.mark.parametrize(
     "timeline_api_cls,expected_entities_fixture",
     [
-        (HomeTimelineAPI, "expected_statuses"),
-        (PublicTimelineAPI, "expected_statuses"),
-        (PersonalAPI, "expected_statuses"),
-        (BookmarksAPI, "expected_statuses"),
-        (NotificationAPI, "expected_notifications"),
+        (HomeTimelineFetcher, "expected_statuses"),
+        (PublicTimelineFetcher, "expected_statuses"),
+        (PersonalTimelineFetcher, "expected_statuses"),
+        (BookmarksFetcher, "expected_statuses"),
+        (NotificationFetcher, "expected_notifications"),
     ],
 )
 def test_timeline_api(
-    timeline_api_cls: type[TimelineAPI[BaseEntity]],
+    timeline_api_cls: type[TimelineFetcher[BaseEntity]],
     expected_entities_fixture: str,
     settings: AuthSettings,
     monkeypatch: pytest.MonkeyPatch,
@@ -178,7 +178,7 @@ def test_timeline_api(
 def test_thread_api(expected_thread: ExpectedThreadResponse, settings: AuthSettings):
     get_request_mock = MagicMock(return_value=expected_thread.old.json)
     client_mock = MagicMock(spec_set=APIClient, get=get_request_mock)
-    thread_api = ThreadAPI(
+    thread_api = ThreadFetcher(
         settings=settings, status=expected_thread.status, client=client_mock
     )
 

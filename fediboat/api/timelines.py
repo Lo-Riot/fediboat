@@ -27,7 +27,7 @@ class APIClient:
             headers=self._headers,
         )
 
-        if resp.links.get("next"):
+        if resp.links.get("next") is not None:
             self._next_link = resp.links["next"]["url"]
             log("Next link:", self._next_link)
         return resp.text
@@ -37,13 +37,13 @@ class APIClient:
         return self.get(self._next_link)
 
 
-class BaseAPI(Generic[Entity], ABC):
-    """Provides basic functionality for an authenticated user to work with Mastodon API"""
+class EntityFetcher(Generic[Entity], ABC):
+    """API for fetching Mastodon entities"""
 
     def __init__(self, settings: AuthSettings, client: APIClient | None = None):
         self.settings = settings
-        self.entities: list[Entity] = list()
         self.client = client
+        self.entities: list[Entity] = list()
 
     @property
     def client(self):
@@ -65,7 +65,7 @@ class BaseAPI(Generic[Entity], ABC):
         """Returns new entities"""
 
 
-class TimelineAPI(BaseAPI[Entity]):
+class TimelineFetcher(EntityFetcher[Entity]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -99,7 +99,7 @@ class TimelineAPI(BaseAPI[Entity]):
         return self.entities
 
 
-class HomeTimelineAPI(TimelineAPI[Status]):
+class HomeTimelineFetcher(TimelineFetcher[Status]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -115,7 +115,7 @@ class HomeTimelineAPI(TimelineAPI[Status]):
         )
 
 
-class PublicTimelineAPI(TimelineAPI[Status]):
+class PublicTimelineFetcher(TimelineFetcher[Status]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -131,7 +131,7 @@ class PublicTimelineAPI(TimelineAPI[Status]):
         )
 
 
-class NotificationAPI(TimelineAPI[Notification]):
+class NotificationFetcher(TimelineFetcher[Notification]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -147,7 +147,7 @@ class NotificationAPI(TimelineAPI[Notification]):
         )
 
 
-class ThreadAPI(BaseAPI[Status]):
+class ThreadFetcher(EntityFetcher[Status]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -171,7 +171,7 @@ class ThreadAPI(BaseAPI[Status]):
         return self.entities
 
 
-class PersonalAPI(TimelineAPI[Status]):
+class PersonalTimelineFetcher(TimelineFetcher[Status]):
     def __init__(
         self,
         settings: AuthSettings,
@@ -186,7 +186,7 @@ class PersonalAPI(TimelineAPI[Status]):
         )
 
 
-class BookmarksAPI(TimelineAPI[Status]):
+class BookmarksFetcher(TimelineFetcher[Status]):
     def __init__(
         self,
         settings: AuthSettings,
