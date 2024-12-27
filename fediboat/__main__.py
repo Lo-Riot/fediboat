@@ -164,6 +164,9 @@ class BaseTimeline(Screen, Generic[Fetcher]):
                 subprocess.run([self.config.editor, tmp.name])
                 content = tmp.read().decode("utf-8")
 
+            if not content:
+                return
+
         account_api = AccountAPI(self.mastodon_api.settings, self.mastodon_api.client)
         account_api.post_status(content)
 

@@ -109,6 +109,8 @@ class TimelineFetcher(EntityFetcher[Entity]):
 
         new_statuses_json = self.client.get_next()
         new_statuses = self.validator.validate_json(new_statuses_json)
+        if new_statuses[-1].id == self.entities[-1].id:
+            return self.entities
         self.entities.extend(new_statuses)
         return self.entities
 
