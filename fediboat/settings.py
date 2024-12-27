@@ -1,6 +1,9 @@
 import json
+import tomllib
 from pathlib import Path
 from dataclasses import dataclass
+
+from pydantic import BaseModel
 
 
 @dataclass
@@ -17,19 +20,21 @@ class AuthSettings:
     client_secret: str
 
 
+class Config(BaseModel):
+    editor: str = "vim"
+
+
 @dataclass
 class Settings:
     auth: AuthSettings
+    config: Config
 
 
 class LoadSettingsError(Exception):
     pass
 
 
-def load_settings(auth_settings_file: Path) -> Settings:
-    if not (auth_settings_file.exists() and auth_settings_file.is_file()):
-        raise LoadSettingsError(f"{auth_settings_file} does not exist!")
-
+def _load_auth_settings(auth_settings_file: Path) -> AuthSettings:
     auth_settings_json = json.loads(auth_settings_file.read_text())
 
     full_username = auth_settings_json["current"]
@@ -44,7 +49,7 @@ def load_settings(auth_settings_file: Path) -> Settings:
     client_id = app["client_id"]
     client_secret = app["client_secret"]
 
-    auth_settings = AuthSettings(
+    return AuthSettings(
         user_id,
         instance_url,
         instance_domain,
@@ -53,7 +58,6 @@ def load_settings(auth_settings_file: Path) -> Settings:
         client_id,
         client_secret,
     )
-    return Settings(auth_settings)
 
 
 def create_auth_settings(auth_settings_file: Path, auth_settings: AuthSettings) -> None:
@@ -76,3 +80,21 @@ def create_auth_settings(auth_settings_file: Path, auth_settings: AuthSettings) 
             },
         }
         f.write(json.dumps(auth_file_content, indent=4))
+
+
+def _load_config(config_file: Path) -> Config:
+    if not (config_file.exists() and config_file.is_file()):
+        return Config()
+
+    with open(config_file, "rb") as f:
+        config_toml = tomllib.load(f)
+    return Config.model_validate(config_toml)
+
+
+def load_settings(auth_settings_file: Path, config_file: Path) -> Settings:
+    if not (auth_settings_file.exists() and auth_settings_file.is_file()):
+        raise LoadSettingsError(f"{auth_settings_file} does not exist!")
+
+    auth_settings = _load_auth_settings(auth_settings_file)
+    config = _load_config(config_file)
+    return Settings(auth_settings, config)

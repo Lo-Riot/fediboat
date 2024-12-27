@@ -33,7 +33,7 @@ from fediboat.api.timelines import (
 )
 from fediboat.cli import cli
 from fediboat.entities import Notification, Status
-from fediboat.settings import load_settings
+from fediboat.settings import Config, load_settings
 
 Fetcher = TypeVar("Fetcher", bound=EntityFetcher, covariant=True)
 StatusFetcher = TypeVar("StatusFetcher", bound=EntityFetcher[Status], covariant=True)
@@ -112,9 +112,15 @@ class BaseTimeline(Screen, Generic[Fetcher]):
 
     CSS_PATH = "timeline.tcss"
 
-    def __init__(self, mastodon_api: Fetcher, timelines: dict[str, TimelineScreenData]):
+    def __init__(
+        self,
+        mastodon_api: Fetcher,
+        timelines: dict[str, TimelineScreenData],
+        config: Config,
+    ):
         self.mastodon_api = mastodon_api
         self.timelines = timelines
+        self.config = config
         super().__init__()
 
     def on_mount(self) -> None:
@@ -141,6 +147,7 @@ class BaseTimeline(Screen, Generic[Fetcher]):
             timeline = screen(
                 mastodon_api(settings=self.mastodon_api.settings, client=client),
                 self.timelines,
+                self.config,
             )
             timeline.sub_title = f"{timeline_name} Timeline"
             self.app.switch_screen(timeline)
@@ -154,7 +161,7 @@ class BaseTimeline(Screen, Generic[Fetcher]):
     def action_post_status(self) -> None:
         with self.app.suspend():
             with tempfile.NamedTemporaryFile() as tmp:
-                subprocess.run(["nvim", tmp.name])
+                subprocess.run([self.config.editor, tmp.name])
                 content = tmp.read().decode("utf-8")
 
         account_api = AccountAPI(self.mastodon_api.settings, self.mastodon_api.client)
@@ -243,7 +250,7 @@ class BaseStatusTimeline(BaseTimeline[StatusFetcher]):
         selected_status = self.mastodon_api.get_entity(row_index)
 
         thread_api = ThreadFetcher(self.mastodon_api.settings, selected_status)
-        self.app.push_screen(ThreadTimeline(thread_api, self.timelines))
+        self.app.push_screen(ThreadTimeline(thread_api, self.timelines, self.config))
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
@@ -305,22 +312,27 @@ class FediboatApp(App):
         self,
         mastodon_api: TimelineFetcher[Status],
         timelines: dict[str, TimelineScreenData],
+        config: Config,
     ):
         self.mastodon_api = mastodon_api
         self.timelines = timelines
+        self.config = config
         super().__init__()
 
     def on_mount(self) -> None:
         self.title = "Fediboat"
         self.sub_title = "Home Timeline"
         self.install_screen(StatusContent(), name="status")
-        self.push_screen(StatusTimeline(self.mastodon_api, self.timelines))
+        self.push_screen(StatusTimeline(self.mastodon_api, self.timelines, self.config))
 
 
 @cli.command()
 @click.pass_context
 def tui(ctx):
-    settings = load_settings(ctx.obj["AUTH_SETTINGS"].expanduser())
+    auth_settings_file = ctx.obj["AUTH_SETTINGS"].expanduser()
+    config_file = ctx.obj["CONFIG"].expanduser()
+    settings = load_settings(auth_settings_file, config_file)
+
     timeline_api = HomeTimelineFetcher(settings.auth)
     timelines: dict[str, TimelineScreenData] = {
         "Home": TimelineScreenData(
@@ -351,7 +363,7 @@ def tui(ctx):
             BookmarksFetcher,
         ),
     }
-    app = FediboatApp(timeline_api, timelines)
+    app = FediboatApp(timeline_api, timelines, settings.config)
     app.run()
 
 

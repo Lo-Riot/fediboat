@@ -20,10 +20,12 @@ from fediboat.settings import (
 
 @click.group()
 @click.option("-a", "--auth", default="~/.config/fediboat/auth.json", type=Path)
+@click.option("-c", "--config", default="~/.config/fediboat/config.toml", type=Path)
 @click.pass_context
-def cli(ctx, auth: Path):
+def cli(ctx, auth: Path, config: Path):
     ctx.ensure_object(dict)
     ctx.obj["AUTH_SETTINGS"] = auth
+    ctx.obj["CONFIG"] = config
 
 
 def _login_account() -> AuthSettings:
@@ -63,9 +65,10 @@ def _login_account() -> AuthSettings:
 @click.pass_context
 def login(ctx):
     auth_settings_file = ctx.obj["AUTH_SETTINGS"].expanduser()
+    config_file = ctx.obj["CONFIG"].expanduser()
 
     try:
-        auth_settings = load_settings(auth_settings_file).auth
+        auth_settings = load_settings(auth_settings_file, config_file).auth
         verify_credentials(
             auth_settings.instance_url,
             auth_settings.access_token,
