@@ -1,8 +1,4 @@
-from abc import ABC, abstractmethod
 import requests
-import webbrowser
-
-from fediboat.settings import AuthSettings
 
 
 class APIError(Exception):

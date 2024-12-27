@@ -36,26 +36,40 @@ class APIClient:
         # TODO: Handle exception if _next_link == ''
         return self.get(self._next_link)
 
+    def post(self, api_endpoint: str, data: dict) -> str:
+        return requests.post(
+            api_endpoint,
+            data=data,
+            headers=self._headers,
+        ).text
 
-class EntityFetcher(Generic[Entity], ABC):
+
+class BaseAPI(ABC):
+    def __init__(self, settings: AuthSettings, client: APIClient):
+        self.settings = settings
+        self.client = client
+
+
+class AccountAPI(BaseAPI):
+    """API for managing account and posting statuses"""
+
+    def post_status(self, content: str) -> Status:
+        status = self.client.post(
+            f"{self.settings.instance_url}/api/v1/statuses",
+            data={"status": content},
+        )
+        return Status.model_validate_json(status)
+
+
+class EntityFetcher(Generic[Entity], BaseAPI):
     """API for fetching Mastodon entities"""
 
     def __init__(self, settings: AuthSettings, client: APIClient | None = None):
-        self.settings = settings
-        self.client = client
         self.entities: list[Entity] = list()
-
-    @property
-    def client(self):
-        if self._client is None:
-            raise ValueError("Client is not set.")
-        return self._client
-
-    @client.setter
-    def client(self, value: APIClient | None):
-        if value is None:
-            value = APIClient(self.settings)
-        self._client = value
+        if client is None:
+            client = APIClient(settings)
+        self.client = client
+        super().__init__(settings, client)
 
     def get_entity(self, index: int) -> Entity:
         return self.entities[index]

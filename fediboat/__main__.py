@@ -1,4 +1,6 @@
 from typing import Generic, NamedTuple, Protocol, TypeVar
+import tempfile
+import subprocess
 import click
 
 from markdownify import markdownify as md
@@ -17,6 +19,7 @@ from textual.widgets import (
     Markdown,
 )
 
+from fediboat.api.timelines import AccountAPI
 from fediboat.api.timelines import (
     APIClient,
     BookmarksFetcher,
@@ -147,6 +150,15 @@ class BaseTimeline(Screen, Generic[Fetcher]):
     def action_update_timeline_new(self) -> None:
         self.mastodon_api.fetch_new()
         self._add_rows()
+
+    def action_post_status(self) -> None:
+        with self.app.suspend():
+            with tempfile.NamedTemporaryFile() as tmp:
+                subprocess.run(["nvim", tmp.name])
+                content = tmp.read().decode("utf-8")
+
+        account_api = AccountAPI(self.mastodon_api.settings, self.mastodon_api.client)
+        account_api.post_status(content)
 
     def _add_rows(self) -> None:
         pass
