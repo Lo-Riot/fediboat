@@ -48,7 +48,7 @@ class Jump(ModalScreen[int]):
         super().__init__()
 
     def compose(self) -> ComposeResult:
-        yield Input(self.character, type="integer")
+        yield Input(self.character, select_on_focus=False, type="integer")
 
     @on(Input.Submitted)
     def submit(self) -> None:
@@ -171,7 +171,9 @@ class BaseTimeline(Screen, Generic[Fetcher]):
         account_api.post_status(content)
 
     def _add_rows(self) -> None:
-        pass
+        raise NotImplementedError(
+            "Subclasses of BaseTimeline must implement _add_rows()"
+        )
 
     def on_key(self, event: events.Key):
         if event.character is None or not event.character.isdigit():

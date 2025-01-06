@@ -50,13 +50,13 @@ def _login_account() -> AuthSettings:
     full_username = f"{user['acct']}@{instance_domain}"
 
     auth_settings = AuthSettings(
-        user["id"],
-        instance_url,
-        instance_domain,
-        full_username,
-        access_token,
-        app["client_id"],
-        app["client_secret"],
+        id=user["id"],
+        instance_url=instance_url,
+        instance_domain=instance_domain,
+        full_username=full_username,
+        access_token=access_token,
+        client_id=app["client_id"],
+        client_secret=app["client_secret"],
     )
     return auth_settings
 

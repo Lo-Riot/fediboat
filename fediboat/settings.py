@@ -6,8 +6,26 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 
-@dataclass
-class AuthSettings:
+class AppSettings(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+class UserSettings(BaseModel):
+    id: str
+    instance: str
+    access_token: str
+
+
+class AuthSettingsJson(BaseModel):
+    """Used to validate json file structure"""
+
+    current: str
+    apps: dict[str, AppSettings]
+    users: dict[str, UserSettings]
+
+
+class AuthSettings(BaseModel):
     """Settings for the current active user"""
 
     id: str
@@ -35,51 +53,44 @@ class LoadSettingsError(Exception):
 
 
 def _load_auth_settings(auth_settings_file: Path) -> AuthSettings:
-    auth_settings_json = json.loads(auth_settings_file.read_text())
+    auth_settings_raw_json = auth_settings_file.read_text()
+    auth_settings_json = AuthSettingsJson.model_validate_json(auth_settings_raw_json)
 
-    full_username = auth_settings_json["current"]
-    user = auth_settings_json["users"][full_username]
-
-    user_id = user["id"]
-    instance_domain = user["instance"]
-    instance_url = "https://" + instance_domain
-    access_token = user["access_token"]
-
-    app = auth_settings_json["apps"][instance_domain]
-    client_id = app["client_id"]
-    client_secret = app["client_secret"]
+    user_data = auth_settings_json.users[auth_settings_json.current]
+    app = auth_settings_json.apps[user_data.instance]
+    instance_url = "https://" + user_data.instance
 
     return AuthSettings(
-        user_id,
-        instance_url,
-        instance_domain,
-        full_username,
-        access_token,
-        client_id,
-        client_secret,
+        id=user_data.id,
+        instance_url=instance_url,
+        instance_domain=user_data.instance,
+        full_username=auth_settings_json.current,
+        access_token=user_data.access_token,
+        client_id=app.client_id,
+        client_secret=app.client_secret,
     )
 
 
 def create_auth_settings(auth_settings_file: Path, auth_settings: AuthSettings) -> None:
     auth_settings_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(auth_settings_file, "w") as f:
-        auth_file_content = {
-            "current": auth_settings.full_username,
-            "apps": {
-                auth_settings.instance_domain: {
-                    "client_id": auth_settings.client_id,
-                    "client_secret": auth_settings.client_secret,
-                },
-            },
-            "users": {
-                auth_settings.full_username: {
-                    "id": auth_settings.id,
-                    "instance": auth_settings.instance_domain,
-                    "access_token": auth_settings.access_token,
-                },
-            },
-        }
-        f.write(json.dumps(auth_file_content, indent=4))
+    auth_settings_json = AuthSettingsJson(
+        current=auth_settings.full_username,
+        apps={
+            auth_settings.instance_domain: AppSettings(
+                client_id=auth_settings.client_id,
+                client_secret=auth_settings.client_secret,
+            ),
+        },
+        users={
+            auth_settings.full_username: UserSettings(
+                id=auth_settings.id,
+                instance=auth_settings.instance_domain,
+                access_token=auth_settings.access_token,
+            ),
+        },
+    )
+    auth_settings_raw_json = auth_settings_json.model_dump_json(indent=4)
+    auth_settings_file.write_text(auth_settings_raw_json)
 
 
 def _load_config(config_file: Path) -> Config:
