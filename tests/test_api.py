@@ -166,7 +166,12 @@ def test_timeline_api(
     get_request_mock.assert_called_with(
         settings.instance_url + timeline_api.api_endpoint,
     )
+    assert response_entities is not None
     assert len(response_entities) == 2
+
+    client_mock.get_next.return_value = None
+    response_entities = timeline_api.fetch_old()
+    assert response_entities is None
 
     response_entities = timeline_api.fetch_new()
     get_request_mock.assert_called_with(

@@ -32,9 +32,9 @@ class APIClient:
             log("Next link:", self._next_link)
         return resp.text
 
-    def get_next(self) -> str:
-        # TODO: Handle exception if _next_link == ''
-        return self.get(self._next_link)
+    def get_next(self) -> str | None:
+        if self._next_link:
+            return self.get(self._next_link)
 
     def post(self, api_endpoint: str, data: dict) -> str:
         return requests.post(
@@ -104,10 +104,13 @@ class TimelineFetcher(EntityFetcher[Entity]):
         self.entities = new_statuses
         return self.entities
 
-    def fetch_old(self) -> list[Entity]:
+    def fetch_old(self) -> list[Entity] | None:
         """Return the next page of entities."""
 
         new_statuses_json = self.client.get_next()
+        if new_statuses_json is None:
+            return
+
         new_statuses = self.validator.validate_json(new_statuses_json)
         if new_statuses[-1].id == self.entities[-1].id:
             return self.entities

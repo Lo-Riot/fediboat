@@ -230,8 +230,8 @@ class TimelineNextPageMixin:
     def action_update_timeline_old(
         self: TimelineNextPageProtocol,
     ) -> None:
-        self.mastodon_api.fetch_old()
-        self._add_rows()
+        if self.mastodon_api.fetch_old() is not None:
+            self._add_rows()
 
     def action_cursor_down(self: TimelineNextPageProtocol) -> None:
         timeline = self.query_one(DataTable)
