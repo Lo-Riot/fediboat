@@ -1,9 +1,10 @@
-from datetime import datetime, date
+from datetime import datetime
 from typing import Optional, Protocol
-from pydantic import BaseModel, computed_field
+
+from pydantic import BaseModel
 
 
-class BaseEntity(BaseModel):
+class EntityProtocol(Protocol):
     id: str
 
 
@@ -140,7 +141,8 @@ class Account(BaseModel):
     source: Optional[dict] = None
 
 
-class Status(BaseEntity):
+class Status(BaseModel):
+    id: str
     uri: str
     created_at: datetime
     account: Account
@@ -191,7 +193,8 @@ class Report(BaseModel):
     target_account: Account
 
 
-class Notification(BaseEntity):
+class Notification(BaseModel):
+    id: str
     type: str
     created_at: datetime
     account: Account

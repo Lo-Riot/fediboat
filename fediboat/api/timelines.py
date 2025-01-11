@@ -1,221 +1,162 @@
-from abc import ABC, abstractmethod
-from typing import Generic, TypeAlias, TypeVar
+from datetime import datetime
+from typing import Callable, Generator, TypeAlias, TypeVar
 
 import requests
-from pydantic import TypeAdapter
-from textual import log
+from pydantic import BaseModel, TypeAdapter
 
-from fediboat.api.auth import get_headers
-from fediboat.entities import BaseEntity, Context, Notification, Status
+from fediboat.entities import Context, EntityProtocol, Notification, Status
 from fediboat.settings import AuthSettings
 
-Entity = TypeVar("Entity", bound=BaseEntity)
+Entity = TypeVar("Entity", bound=EntityProtocol)
 QueryParams: TypeAlias = str | int | bool
 
 
-class APIClient:
-    def __init__(self, settings: AuthSettings, **default_query_params: QueryParams):
-        self.settings = settings
-        self._default_query_params = default_query_params
-        self._headers = get_headers(self.settings.access_token)
-        self._next_link = ""
-
-    def get(self, api_endpoint: str) -> str:
-        resp = requests.get(
-            api_endpoint,
-            params=self._default_query_params,
-            headers=self._headers,
-        )
-
-        if resp.links.get("next") is not None:
-            self._next_link = resp.links["next"]["url"]
-            log("Next link:", self._next_link)
-        return resp.text
-
-    def get_next(self) -> str | None:
-        if self._next_link:
-            return self.get(self._next_link)
-
-    def post(self, api_endpoint: str, data: dict) -> str:
-        return requests.post(
-            api_endpoint,
-            data=data,
-            headers=self._headers,
-        ).text
+class TUIEntity(BaseModel):
+    id: str | None
+    content: str | None
+    author: str
+    created_at: datetime
+    in_reply_to_id: str | None
+    notification_type: str | None = None
 
 
-class BaseAPI(ABC):
-    def __init__(self, settings: AuthSettings, client: APIClient):
-        self.settings = settings
-        self.client = client
+def _timeline_generator(
+    session: requests.Session,
+    api_endpoint: str,
+    validator: TypeAdapter[list[Entity]],
+    **query_params: QueryParams,
+) -> Generator[list[Entity]]:
+    next_url: str = api_endpoint
+    while next_url:
+        resp = session.get(next_url, params=query_params)
+        yield validator.validate_python(resp.json())
 
-
-class AccountAPI(BaseAPI):
-    """API for managing account and posting statuses"""
-
-    def post_status(self, content: str) -> Status:
-        status = self.client.post(
-            f"{self.settings.instance_url}/api/v1/statuses",
-            data={"status": content},
-        )
-        return Status.model_validate_json(status)
-
-
-class EntityFetcher(Generic[Entity], BaseAPI):
-    """API for fetching Mastodon entities"""
-
-    def __init__(self, settings: AuthSettings, client: APIClient | None = None):
-        self.entities: list[Entity] = list()
-        if client is None:
-            client = APIClient(settings)
-        self.client = client
-        super().__init__(settings, client)
-
-    def get_entity(self, index: int) -> Entity:
-        return self.entities[index]
-
-    @abstractmethod
-    def fetch_new(self) -> list[Entity]:
-        """Returns new entities"""
-
-
-class TimelineFetcher(EntityFetcher[Entity]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Entity]] = TypeAdapter(list[BaseEntity]),
-        api_endpoint: str = "/api/v1/timelines/home",
-        client: APIClient | None = None,
-    ):
-        self.api_endpoint = api_endpoint
-        self.validator = validator
-        super().__init__(settings, client)
-
-    def fetch_new(self) -> list[Entity]:
-        """Refresh the timeline, return the latest entities."""
-
-        new_statuses_json = self.client.get(
-            self.settings.instance_url + self.api_endpoint
-        )
-        new_statuses = self.validator.validate_json(new_statuses_json)
-        if len(new_statuses) == 0:
-            return self.entities
-
-        self.entities = new_statuses
-        return self.entities
-
-    def fetch_old(self) -> list[Entity] | None:
-        """Return the next page of entities."""
-
-        new_statuses_json = self.client.get_next()
-        if new_statuses_json is None:
+        if resp.links.get("next") is None or resp.links["next"]["url"] == next_url:
             return
 
-        new_statuses = self.validator.validate_json(new_statuses_json)
-        if new_statuses[-1].id == self.entities[-1].id:
-            return self.entities
-        self.entities.extend(new_statuses)
-        return self.entities
+        next_url = resp.links["next"]["url"]
 
 
-class HomeTimelineFetcher(TimelineFetcher[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Status]] = TypeAdapter(list[Status]),
-        api_endpoint: str = "/api/v1/timelines/home",
-        client: APIClient | None = None,
-    ):
-        super().__init__(
-            settings,
-            validator=validator,
-            api_endpoint=api_endpoint,
-            client=client,
+def status_to_tui_entity(status: Status) -> TUIEntity:
+    return TUIEntity(
+        id=status.id,
+        content=status.content,
+        author=status.account.acct,
+        created_at=status.created_at,
+        in_reply_to_id=status.in_reply_to_id,
+    )
+
+
+def statuses_to_tui_entities(statuses: list[Status]) -> list[TUIEntity]:
+    return [status_to_tui_entity(status) for status in statuses]
+
+
+def notifications_to_tui_entities(notifications: list[Notification]) -> list[TUIEntity]:
+    return [
+        TUIEntity(
+            id=notification.status.id if notification.status else None,
+            content=notification.status.content if notification.status else None,
+            author=notification.account.acct,
+            created_at=notification.created_at,
+            in_reply_to_id=notification.status.in_reply_to_id
+            if notification.status
+            else None,
+            notification_type=notification.type,
         )
+        for notification in notifications
+    ]
 
 
-class PublicTimelineFetcher(TimelineFetcher[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Status]] = TypeAdapter(list[Status]),
-        api_endpoint: str = "/api/v1/timelines/public",
-        client: APIClient | None = None,
+def context_to_tui_entities(context: Context, status: TUIEntity) -> list[TUIEntity]:
+    ancestors = statuses_to_tui_entities(context.ancestors)
+    descendants = statuses_to_tui_entities(context.descendants)
+    return ancestors + [status] + descendants
+
+
+def status_timeline_generator(
+    session: requests.Session, api_endpoint: str, **query_params: QueryParams
+) -> Generator[list[TUIEntity]]:
+    for statuses in _timeline_generator(
+        session, api_endpoint, TypeAdapter(list[Status]), **query_params
     ):
-        super().__init__(
-            settings,
-            validator=validator,
-            api_endpoint=api_endpoint,
-            client=client,
-        )
+        yield statuses_to_tui_entities(statuses)
 
 
-class NotificationFetcher(TimelineFetcher[Notification]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Notification]] = TypeAdapter(list[Notification]),
-        api_endpoint: str = "/api/v1/notifications",
-        client: APIClient | None = None,
+def notification_timeline_generator(
+    session: requests.Session, api_endpoint: str, **query_params: QueryParams
+) -> Generator[list[TUIEntity]]:
+    for notifications in _timeline_generator(
+        session, api_endpoint, TypeAdapter(list[Notification]), **query_params
     ):
-        super().__init__(
-            settings,
-            validator=validator,
-            api_endpoint=api_endpoint,
-            client=client,
-        )
+        yield notifications_to_tui_entities(notifications)
 
 
-class ThreadFetcher(EntityFetcher[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        status: Status,
-        client: APIClient | None = None,
-    ):
-        self.status = status
-        super().__init__(settings, client)
-
-    def fetch_new(self) -> list[Status]:
-        thread_context_json = self.client.get(
-            f"{self.settings.instance_url}/api/v1/statuses/{self.status.id}/context"
-        )
-        thread_context = Context.model_validate_json(thread_context_json)
-
-        thread = thread_context.ancestors.copy()
-        thread.append(self.status)
-        thread.extend(thread_context.descendants)
-
-        self.entities = thread
-        return self.entities
+def home_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return status_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/timelines/home"
+    )
 
 
-class PersonalTimelineFetcher(TimelineFetcher[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Status]] = TypeAdapter(list[Status]),
-        client: APIClient | None = None,
-    ):
-        super().__init__(
-            settings,
-            validator=validator,
-            api_endpoint=f"/api/v1/accounts/{settings.id}/statuses",
-            client=client,
-        )
+def local_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return status_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/timelines/public", local=True
+    )
 
 
-class BookmarksFetcher(TimelineFetcher[Status]):
-    def __init__(
-        self,
-        settings: AuthSettings,
-        validator: TypeAdapter[list[Status]] = TypeAdapter(list[Status]),
-        api_endpoint: str = "/api/v1/bookmarks",
-        client: APIClient | None = None,
-    ):
-        super().__init__(
-            settings,
-            validator=validator,
-            api_endpoint=api_endpoint,
-            client=client,
-        )
+def global_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return status_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/timelines/public", remote=True
+    )
+
+
+def personal_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return status_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/accounts/{settings.id}/statuses"
+    )
+
+
+def bookmarks_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return status_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/bookmarks"
+    )
+
+
+def notifications_timeline_generator(
+    session: requests.Session, settings: AuthSettings
+) -> Generator[list[TUIEntity]]:
+    return notification_timeline_generator(
+        session, f"{settings.instance_url}/api/v1/notifications", limit=20
+    )
+
+
+def thread_fetcher(
+    session: requests.Session, settings: AuthSettings, status: TUIEntity
+) -> Callable[..., list[TUIEntity]]:
+    def fetch_thread() -> list[TUIEntity]:
+        context_json = session.get(
+            f"{settings.instance_url}/api/v1/statuses/{status.id}/context"
+        ).json()
+        context = Context.model_validate(context_json)
+        return context_to_tui_entities(context, status)
+
+    return fetch_thread
+
+
+def post_status(
+    content: str, session: requests.Session, settings: AuthSettings
+) -> Status:
+    status = session.post(
+        f"{settings.instance_url}/api/v1/statuses",
+        data={"status": content},
+    )
+    return Status.model_validate(status.json())

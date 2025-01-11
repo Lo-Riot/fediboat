@@ -1,15 +1,14 @@
-from typing import Generic, NamedTuple, Protocol, TypeVar
+from typing import Callable, Generator
 import tempfile
 import subprocess
-import click
 
+import click
 from markdownify import markdownify as md
-from pydantic import TypeAdapter
+from requests import Session
 from rich.text import Text
 
 from textual import events, on, log
 from textual.app import App, ComposeResult
-from textual.css.query import QueryType
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     DataTable,
@@ -19,25 +18,20 @@ from textual.widgets import (
     Markdown,
 )
 
-from fediboat.api.timelines import AccountAPI
+from fediboat.api.auth import get_headers
 from fediboat.api.timelines import (
-    APIClient,
-    BookmarksFetcher,
-    EntityFetcher,
-    PublicTimelineFetcher,
-    HomeTimelineFetcher,
-    NotificationFetcher,
-    PersonalTimelineFetcher,
-    ThreadFetcher,
-    TimelineFetcher,
+    TUIEntity,
+    bookmarks_timeline_generator,
+    thread_fetcher,
+    global_timeline_generator,
+    home_timeline_generator,
+    local_timeline_generator,
+    notifications_timeline_generator,
+    personal_timeline_generator,
+    post_status,
 )
 from fediboat.cli import cli
-from fediboat.entities import Notification, Status
-from fediboat.settings import Config, load_settings
-
-Fetcher = TypeVar("Fetcher", bound=EntityFetcher, covariant=True)
-StatusFetcher = TypeVar("StatusFetcher", bound=EntityFetcher[Status], covariant=True)
-Timeline = TypeVar("Timeline", bound=TimelineFetcher, covariant=True)
+from fediboat.settings import AuthSettings, Settings, load_settings
 
 
 class Jump(ModalScreen[int]):
@@ -91,16 +85,11 @@ class StatusContent(Screen):
         yield Footer()
 
 
-class TimelineScreenData(NamedTuple):
-    screen: type["BaseTimeline"]
-    mastodon_api: type[EntityFetcher]
-    client: APIClient | None = None
-
-
-class BaseTimeline(Screen, Generic[Fetcher]):
+class BaseTimeline(Screen):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
+        ("t", "open_thread", "Open thread"),
         ("p", "post_status", "Post"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
@@ -114,13 +103,27 @@ class BaseTimeline(Screen, Generic[Fetcher]):
 
     def __init__(
         self,
-        mastodon_api: Fetcher,
-        timelines: dict[str, TimelineScreenData],
-        config: Config,
+        timelines: dict[
+            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
+        ],
+        settings: Settings,
+        session: Session,
+        current_timeline_name: str = "Home",
     ):
-        self.mastodon_api = mastodon_api
         self.timelines = timelines
-        self.config = config
+        self.current_timeline_name = current_timeline_name
+        self.settings = settings
+        self.session = session
+        self.current_timeline = timelines[current_timeline_name](session, settings.auth)
+        self.entities: list[TUIEntity] = []
+        self.notification_signs: dict[str, tuple[str, str]] = {
+            "favourite": ("★", "#FFD32C"),
+            "mention": ("@", "#82C8E5"),
+            "reblog": ("⮂", "#79BD9A"),
+            "follow": ("+", ""),
+            "follow_request": ("r", ""),
+            "moderation_warning": ("w", "#C04657"),
+        }
         super().__init__()
 
     def on_mount(self) -> None:
@@ -131,6 +134,7 @@ class BaseTimeline(Screen, Generic[Fetcher]):
         timeline.add_column("user", width=25)
         timeline.add_column("title", width=50)
         timeline.add_column("is_reply", width=1)
+        timeline.add_column("notification_type", width=1)
         self.action_update_timeline_new()
 
     def compose(self) -> ComposeResult:
@@ -142,38 +146,70 @@ class BaseTimeline(Screen, Generic[Fetcher]):
         def switch_timeline(timeline_name: str | None):
             if timeline_name is None:
                 return
-            screen, mastodon_api, client = self.timelines[timeline_name]
 
-            timeline = screen(
-                mastodon_api(settings=self.mastodon_api.settings, client=client),
-                self.timelines,
-                self.config,
+            if len(self.app.screen_stack) > 2:
+                for _ in self.app.screen_stack[2:]:
+                    self.app.pop_screen()
+
+            self.app.switch_screen(
+                Timeline(self.timelines, self.settings, self.session, timeline_name)
             )
-            timeline.sub_title = f"{timeline_name} Timeline"
-            self.app.switch_screen(timeline)
 
         self.app.push_screen(SwitchTimeline(), switch_timeline)
 
     def action_update_timeline_new(self) -> None:
-        self.mastodon_api.fetch_new()
-        self._add_rows()
+        pass
 
     def action_post_status(self) -> None:
         with self.app.suspend():
             with tempfile.NamedTemporaryFile() as tmp:
-                subprocess.run([self.config.editor, tmp.name])
+                subprocess.run([self.settings.config.editor, tmp.name])
                 content = tmp.read().decode("utf-8")
 
             if not content:
                 return
 
-        account_api = AccountAPI(self.mastodon_api.settings, self.mastodon_api.client)
-        account_api.post_status(content)
+        post_status(content, self.session, self.settings.auth)
 
     def _add_rows(self) -> None:
-        raise NotImplementedError(
-            "Subclasses of BaseTimeline must implement _add_rows()"
+        timeline = self.query_one(DataTable)
+        timeline.clear()
+        for row_index, entity in enumerate(self.entities):
+            created_at = entity.created_at.astimezone()
+            timeline.add_row(
+                Text(str(row_index + 1), "#708090"),
+                Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
+                Text(entity.author, "#DDA0DD"),
+                Text(md(entity.content), "#F5DEB3")
+                if entity.content is not None
+                else "",
+                Text("↵", "#87CEFA") if entity.in_reply_to_id is not None else "",
+                Text(*self.notification_signs.get(entity.notification_type) or "")
+                if entity.notification_type is not None
+                else "",
+            )
+
+    def action_open_thread(self) -> None:
+        timeline = self.query_one(DataTable)
+        row_index = timeline.cursor_row
+        selected_status = self.entities[row_index]
+
+        fetch_thread = thread_fetcher(self.session, self.settings.auth, selected_status)
+        self.app.push_screen(
+            ThreadTimeline(
+                self.timelines,
+                self.settings,
+                self.session,
+                fetch_thread,
+                self.current_timeline_name,
+            )
         )
+
+    def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
+        row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
+        selected_status = self.entities[row_index]
+        markdown = md(selected_status.content)
+        self.app.push_screen(StatusContent(markdown))
 
     def on_key(self, event: events.Key):
         if event.character is None or not event.character.isdigit():
@@ -213,27 +249,29 @@ class BaseTimeline(Screen, Generic[Fetcher]):
         self.query_one(DataTable).action_select_cursor()
 
 
-class TimelineNextPageProtocol(Protocol):
-    @property
-    def mastodon_api(self) -> TimelineFetcher: ...
+class Timeline(BaseTimeline):
+    def __init__(
+        self,
+        timelines: dict[
+            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
+        ],
+        settings: Settings,
+        session: Session,
+        current_timeline_name: str = "Home",
+    ):
+        super().__init__(timelines, settings, session, current_timeline_name)
+        self.screen.sub_title = f"{current_timeline_name} Timeline"
 
-    def _add_rows(self) -> None: ...
+    def action_update_timeline_old(self) -> None:
+        try:
+            new_entities = next(self.current_timeline)
+        except StopIteration:
+            return
 
-    def query_one(self, selector: type[QueryType]) -> QueryType: ...
+        self.entities.extend(new_entities)
+        self._add_rows()
 
-    def action_cursor_down(self) -> None: ...
-
-    def action_update_timeline_old(self) -> None: ...
-
-
-class TimelineNextPageMixin:
-    def action_update_timeline_old(
-        self: TimelineNextPageProtocol,
-    ) -> None:
-        if self.mastodon_api.fetch_old() is not None:
-            self._add_rows()
-
-    def action_cursor_down(self: TimelineNextPageProtocol) -> None:
+    def action_cursor_down(self) -> None:
         timeline = self.query_one(DataTable)
 
         if timeline.cursor_row == timeline.row_count - 1:
@@ -243,71 +281,32 @@ class TimelineNextPageMixin:
 
         timeline.action_cursor_down()
 
-
-class BaseStatusTimeline(BaseTimeline[StatusFetcher]):
-    BINDINGS = [
-        ("t", "open_thread", "Open thread"),
-    ]
-
-    def action_open_thread(self) -> None:
-        timeline = self.query_one(DataTable)
-        row_index = timeline.cursor_row
-        selected_status = self.mastodon_api.get_entity(row_index)
-
-        thread_api = ThreadFetcher(self.mastodon_api.settings, selected_status)
-        self.app.push_screen(ThreadTimeline(thread_api, self.timelines, self.config))
-
-    def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
-        row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        selected_status = self.mastodon_api.get_entity(row_index)
-        markdown = md(selected_status.content)
-        self.app.push_screen(StatusContent(markdown))
-
-    def _add_rows(self) -> None:
-        timeline = self.query_one(DataTable)
-        timeline.clear()
-        for row_index, status in enumerate(self.mastodon_api.entities):
-            created_at = status.created_at.astimezone()
-            timeline.add_row(
-                Text(str(row_index + 1), "#708090"),
-                Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
-                Text(status.account.acct, "#DDA0DD"),
-                Text(md(status.content), "#F5DEB3"),
-                Text("↵", "#87CEFA") if status.in_reply_to_id is not None else "",
-            )
+    def action_update_timeline_new(self) -> None:
+        self.current_timeline = self.timelines[self.current_timeline_name](
+            self.session, self.settings.auth
+        )
+        self.entities = next(self.current_timeline)
+        self._add_rows()
 
 
-class NotificationTimeline(
-    TimelineNextPageMixin,
-    BaseTimeline[TimelineFetcher[Notification]],
-):
-    def _add_rows(self) -> None:
-        timeline = self.query_one(DataTable)
-        timeline.clear()
-        for row_index, notification in enumerate(self.mastodon_api.entities):
-            created_at = notification.created_at.astimezone()
-            timeline.add_row(
-                Text(str(row_index + 1), "#708090"),
-                Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
-                Text(notification.account.acct, "#DDA0DD"),
-                Text(
-                    md(notification.status.content)
-                    if notification.status is not None
-                    else "",
-                    "#F5DEB3",
-                ),
-            )
+class ThreadTimeline(BaseTimeline):
+    def __init__(
+        self,
+        timelines: dict[
+            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
+        ],
+        settings: Settings,
+        session: Session,
+        fetch_thread: Callable[..., list[TUIEntity]],
+        current_timeline_name: str = "Home",
+    ):
+        super().__init__(timelines, settings, session, current_timeline_name)
+        self.fetch_thread = fetch_thread
+        self.screen.sub_title = "Thread Timeline"
 
-
-class StatusTimeline(
-    TimelineNextPageMixin,
-    BaseStatusTimeline[TimelineFetcher[Status]],
-):
-    pass
-
-
-class ThreadTimeline(BaseStatusTimeline[ThreadFetcher]):
-    pass
+    def action_update_timeline_new(self) -> None:
+        self.entities = self.fetch_thread()
+        self._add_rows()
 
 
 class FediboatApp(App):
@@ -315,20 +314,21 @@ class FediboatApp(App):
 
     def __init__(
         self,
-        mastodon_api: TimelineFetcher[Status],
-        timelines: dict[str, TimelineScreenData],
-        config: Config,
+        timelines: dict[
+            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
+        ],
+        settings: Settings,
+        session: Session,
     ):
-        self.mastodon_api = mastodon_api
         self.timelines = timelines
-        self.config = config
+        self.settings = settings
+        self.session = session
         super().__init__()
 
     def on_mount(self) -> None:
         self.title = "Fediboat"
-        self.sub_title = "Home Timeline"
         self.install_screen(StatusContent(), name="status")
-        self.push_screen(StatusTimeline(self.mastodon_api, self.timelines, self.config))
+        self.push_screen(Timeline(self.timelines, self.settings, self.session))
 
 
 @cli.command()
@@ -338,37 +338,20 @@ def tui(ctx):
     config_file = ctx.obj["CONFIG"].expanduser()
     settings = load_settings(auth_settings_file, config_file)
 
-    timeline_api = HomeTimelineFetcher(settings.auth)
-    timelines: dict[str, TimelineScreenData] = {
-        "Home": TimelineScreenData(
-            StatusTimeline,
-            HomeTimelineFetcher,
-        ),
-        "Local": TimelineScreenData(
-            StatusTimeline,
-            PublicTimelineFetcher,
-            APIClient(settings.auth, local=True),
-        ),
-        "Global": TimelineScreenData(
-            StatusTimeline,
-            PublicTimelineFetcher,
-            APIClient(settings.auth, remote=True),
-        ),
-        "Notifications": TimelineScreenData(
-            NotificationTimeline,
-            NotificationFetcher,
-            APIClient(settings.auth, limit=20),
-        ),
-        "Personal": TimelineScreenData(
-            StatusTimeline,
-            PersonalTimelineFetcher,
-        ),
-        "Bookmarks": TimelineScreenData(
-            StatusTimeline,
-            BookmarksFetcher,
-        ),
+    session = Session()
+    session.headers.update(get_headers(settings.auth.access_token))
+    timelines: dict[
+        str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
+    ] = {
+        "Home": home_timeline_generator,
+        "Local": local_timeline_generator,
+        "Global": global_timeline_generator,
+        "Notifications": notifications_timeline_generator,
+        "Personal": personal_timeline_generator,
+        "Bookmarks": bookmarks_timeline_generator,
     }
-    app = FediboatApp(timeline_api, timelines, settings.config)
+
+    app = FediboatApp(timelines, settings, session)
     app.run()
 
 

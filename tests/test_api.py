@@ -1,46 +1,40 @@
+import json
 from dataclasses import dataclass
-from typing import Generic, NamedTuple, Sequence, TypeAlias, TypeVar
+from typing import Any, Callable, Generator, NamedTuple
 from unittest.mock import MagicMock
 
 import pytest
 from pydantic import TypeAdapter
+from requests import Session
 
 from fediboat.api.timelines import (
-    APIClient,
-    BookmarksFetcher,
-    HomeTimelineFetcher,
-    NotificationFetcher,
-    PersonalTimelineFetcher,
-    PublicTimelineFetcher,
-    ThreadFetcher,
-    TimelineFetcher,
+    TUIEntity,
+    context_to_tui_entities,
+    notification_timeline_generator,
+    notifications_to_tui_entities,
+    status_timeline_generator,
+    status_to_tui_entity,
+    statuses_to_tui_entities,
+    thread_fetcher,
 )
-from fediboat.entities import BaseEntity, Context, Notification, Status
+from fediboat.entities import Context, Notification, Status
 from fediboat.settings import AuthSettings
 
-T = TypeVar("T")
-EntitySequence: TypeAlias = "Sequence[BaseEntity]"
 
-
-class ResponseData(Generic[T], NamedTuple):
-    json: str
-    validated: T
+class ResponseData(NamedTuple):
+    json: Any
+    validated: list[TUIEntity]
 
 
 @dataclass
-class ExpectedResponse(Generic[T]):
-    new: ResponseData[T]
-    old: ResponseData[T]
+class ExpectedResponse:
+    new: ResponseData
+    old: ResponseData
 
 
 @dataclass
-class ExpectedEntityResponse(ExpectedResponse[EntitySequence]):
-    pass
-
-
-@dataclass
-class ExpectedThreadResponse(ExpectedResponse[Context]):
-    status: Status
+class ExpectedThreadResponse(ExpectedResponse):
+    status: TUIEntity
 
 
 @pytest.fixture
@@ -56,62 +50,69 @@ def notifications_validator() -> TypeAdapter[list[Notification]]:
 @pytest.fixture
 def expected_statuses(
     statuses_validator: TypeAdapter[list[Status]],
-) -> ExpectedEntityResponse:
+) -> ExpectedResponse:
     with open("tests/data/statuses.json") as f:
-        new_json = f.read()
-    new_validated = statuses_validator.validate_json(new_json)
+        new_json = json.load(f)
+    new_statuses = statuses_validator.validate_python(new_json)
+    new_tui_entities = statuses_to_tui_entities(new_statuses)
 
     with open("tests/data/old_statuses.json") as f:
-        old_json = f.read()
-    old_validated = statuses_validator.validate_json(old_json)
+        old_json = json.load(f)
+    old_statuses = statuses_validator.validate_python(old_json)
+    old_tui_entities = statuses_to_tui_entities(old_statuses)
 
-    return ExpectedEntityResponse(
-        ResponseData(new_json, new_validated),
-        ResponseData(old_json, old_validated),
+    return ExpectedResponse(
+        ResponseData(new_json, new_tui_entities),
+        ResponseData(old_json, old_tui_entities),
     )
 
 
 @pytest.fixture
 def expected_notifications(
     notifications_validator: TypeAdapter[list[Notification]],
-) -> ExpectedEntityResponse:
+) -> ExpectedResponse:
     with open("tests/data/notifications.json") as f:
-        new_json = f.read()
-    new_validated = notifications_validator.validate_json(new_json)
+        new_json = json.load(f)
+    new_notifications = notifications_validator.validate_python(new_json)
+    new_tui_entities = notifications_to_tui_entities(new_notifications)
 
     with open("tests/data/old_notifications.json") as f:
-        old_json = f.read()
-    old_validated = notifications_validator.validate_json(old_json)
+        old_json = json.load(f)
+    old_notifications = notifications_validator.validate_python(old_json)
+    old_tui_entities = notifications_to_tui_entities(old_notifications)
 
-    return ExpectedEntityResponse(
-        ResponseData(new_json, new_validated),
-        ResponseData(old_json, old_validated),
+    return ExpectedResponse(
+        ResponseData(new_json, new_tui_entities),
+        ResponseData(old_json, old_tui_entities),
     )
 
 
 @pytest.fixture
 def expected_thread() -> ExpectedThreadResponse:
-    with open("tests/data/new_thread_statuses.json") as f:
-        new_json = f.read()
-    new_validated = Context.model_validate_json(new_json)
-
-    with open("tests/data/old_thread_statuses.json") as f:
-        old_json = f.read()
-    old_validated = Context.model_validate_json(old_json)
-
     with open("tests/data/thread_status.json") as f:
         thread_status = Status.model_validate_json(f.read())
+    thread_tui_entity = status_to_tui_entity(thread_status)
+
+    with open("tests/data/new_thread_statuses.json") as f:
+        new_json = json.load(f)
+    new_context = Context.model_validate(new_json)
+    new_tui_entities = context_to_tui_entities(new_context, thread_tui_entity)
+
+    with open("tests/data/old_thread_statuses.json") as f:
+        old_json = json.load(f)
+    old_context = Context.model_validate(old_json)
+    old_tui_entities = context_to_tui_entities(old_context, thread_tui_entity)
 
     return ExpectedThreadResponse(
         ResponseData(
             new_json,
-            new_validated,
+            new_tui_entities,
         ),
         ResponseData(
             old_json,
-            old_validated,
+            old_tui_entities,
         ),
-        thread_status,
+        thread_tui_entity,
     )
 
 
@@ -129,71 +130,62 @@ def settings() -> AuthSettings:
 
 
 @pytest.mark.parametrize(
-    "timeline_api_cls,expected_entities_fixture",
+    "timeline_generator,expected_entities_fixture",
     [
-        (HomeTimelineFetcher, "expected_statuses"),
-        (PublicTimelineFetcher, "expected_statuses"),
-        (PersonalTimelineFetcher, "expected_statuses"),
-        (BookmarksFetcher, "expected_statuses"),
-        (NotificationFetcher, "expected_notifications"),
+        (status_timeline_generator, "expected_statuses"),
+        (notification_timeline_generator, "expected_notifications"),
     ],
 )
 def test_timeline_api(
-    timeline_api_cls: type[TimelineFetcher[BaseEntity]],
+    timeline_generator: Callable[..., Generator[list[TUIEntity]]],
     expected_entities_fixture: str,
     settings: AuthSettings,
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ):
-    expected_response: ExpectedEntityResponse = request.getfixturevalue(
+    expected_response: ExpectedResponse = request.getfixturevalue(
         expected_entities_fixture
     )
+    response_mock = MagicMock(**{"json.return_value": expected_response.new.json})
+    get_request_mock = MagicMock(return_value=response_mock)
+    session_mock = MagicMock(spec_set=Session, get=get_request_mock)
+    timeline = timeline_generator(
+        session_mock, f"{settings.instance_url}/api/endpoint", limit=20
+    )
 
-    get_request_mock = MagicMock(return_value=expected_response.new.json)
-    client_mock = MagicMock(spec_set=APIClient, get=get_request_mock)
-    timeline_api = timeline_api_cls(settings=settings, client=client_mock)
-
-    response_entities = timeline_api.fetch_new()
+    response_entities = next(timeline)
     get_request_mock.assert_called_with(
-        settings.instance_url + timeline_api.api_endpoint
+        f"{settings.instance_url}/api/endpoint", params={"limit": 20}
     )
     assert len(response_entities) == 1
     assert len(expected_response.new.validated) == 1
     assert response_entities[0] == expected_response.new.validated[0]
 
-    client_mock.get_next.return_value = expected_response.old.json
-    response_entities = timeline_api.fetch_old()
-    get_request_mock.assert_called_with(
-        settings.instance_url + timeline_api.api_endpoint,
-    )
-    assert response_entities is not None
-    assert len(response_entities) == 2
+    response_mock.json.return_value = expected_response.old.json
 
-    client_mock.get_next.return_value = None
-    response_entities = timeline_api.fetch_old()
-    assert response_entities is None
-
-    response_entities = timeline_api.fetch_new()
-    get_request_mock.assert_called_with(
-        settings.instance_url + timeline_api.api_endpoint
-    )
-    assert len(response_entities) == 1
+    response_mock.links = {
+        "next": {
+            "url": f"{settings.instance_url}/api/endpoint?max_id=7163058",
+            "rel": "next",
+        }
+    }
+    response_entities = next(timeline)
+    with pytest.raises(StopIteration):
+        response_entities = next(timeline)
 
 
 def test_thread_api(expected_thread: ExpectedThreadResponse, settings: AuthSettings):
-    get_request_mock = MagicMock(return_value=expected_thread.old.json)
-    client_mock = MagicMock(spec_set=APIClient, get=get_request_mock)
-    thread_api = ThreadFetcher(
-        settings=settings, status=expected_thread.status, client=client_mock
+    response_mock = MagicMock(**{"json.return_value": expected_thread.old.json})
+    get_request_mock = MagicMock(return_value=response_mock)
+    session_mock = MagicMock(spec_set=Session, get=get_request_mock)
+
+    fetch_thread = thread_fetcher(session_mock, settings, expected_thread.status)
+    statuses = fetch_thread()
+    get_request_mock.assert_called_with(
+        f"{settings.instance_url}/api/v1/statuses/{expected_thread.status.id}/context"
     )
+    assert statuses == expected_thread.old.validated
 
-    statuses = thread_api.fetch_new()
-    assert statuses[0] == expected_thread.old.validated.ancestors[0]
-    assert statuses[1] == expected_thread.status
-    assert statuses[2] == expected_thread.old.validated.descendants[0]
-
-    get_request_mock.return_value = expected_thread.new.json
-    statuses = thread_api.fetch_new()
-    assert statuses[0] == expected_thread.new.validated.ancestors[0]
-    assert statuses[1] == expected_thread.status
-    assert statuses[2:] == expected_thread.new.validated.descendants
+    response_mock.json.return_value = expected_thread.new.json
+    statuses = fetch_thread()
+    assert statuses == expected_thread.new.validated
