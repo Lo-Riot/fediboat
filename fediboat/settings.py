@@ -4,6 +4,8 @@ from pathlib import Path
 import tomllib
 from pydantic import BaseModel
 
+from fediboat.entities import NotificationTypeEnum
+
 
 class AppSettings(BaseModel):
     client_id: str
@@ -37,8 +39,19 @@ class AuthSettings(BaseModel):
     client_secret: str
 
 
+class NotificationsConfig(BaseModel):
+    show: list[NotificationTypeEnum] = [
+        NotificationTypeEnum.favourite,
+        NotificationTypeEnum.mention,
+        NotificationTypeEnum.reblog,
+        NotificationTypeEnum.follow,
+    ]
+    signs: dict[NotificationTypeEnum, tuple[str, str]] = {}
+
+
 class Config(BaseModel):
     editor: str = "vim"
+    notifications: NotificationsConfig = NotificationsConfig()
 
 
 @dataclass
@@ -98,7 +111,18 @@ def _load_config(config_file: Path) -> Config:
 
     with open(config_file, "rb") as f:
         config_toml = tomllib.load(f)
-    return Config.model_validate(config_toml)
+    config = Config.model_validate(config_toml)
+    default_signs: dict[NotificationTypeEnum, tuple[str, str]] = {
+        NotificationTypeEnum.favourite: ("★", "#FFD32C"),
+        NotificationTypeEnum.mention: ("@", "#82C8E5"),
+        NotificationTypeEnum.reblog: ("⮂", "#79BD9A"),
+        NotificationTypeEnum.follow: ("+", ""),
+        NotificationTypeEnum.follow_request: ("r", ""),
+        NotificationTypeEnum.moderation_warning: ("w", "#C04657"),
+    }
+
+    config.notifications.signs = {**default_signs, **config.notifications.signs}
+    return config
 
 
 def load_settings(auth_settings_file: Path, config_file: Path) -> Settings:

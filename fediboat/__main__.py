@@ -1,13 +1,13 @@
-from typing import Callable, Generator, TypeAlias
-import tempfile
 import subprocess
+import tempfile
+from typing import Callable, Generator, TypeAlias
 
 import click
 from markdownify import markdownify as md
 from requests import Session
 from rich.text import Text
 
-from textual import events, on, log
+from textual import events, log, on
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
@@ -20,18 +20,22 @@ from textual.widgets import (
 
 from fediboat.api.auth import get_headers
 from fediboat.api.timelines import (
-    TUIEntity,
     bookmarks_timeline_generator,
-    thread_fetcher,
     global_timeline_generator,
     home_timeline_generator,
+    get_notifications_timeline,
     local_timeline_generator,
-    notifications_timeline_generator,
     personal_timeline_generator,
     post_status,
+    thread_fetcher,
 )
 from fediboat.cli import cli
-from fediboat.settings import AuthSettings, Settings, load_settings
+from fediboat.entities import TUIEntity
+from fediboat.settings import (
+    AuthSettings,
+    Settings,
+    load_settings,
+)
 
 TimelineCallable: TypeAlias = Callable[
     [Session, AuthSettings], Generator[list[TUIEntity]]
@@ -118,14 +122,7 @@ class BaseTimeline(Screen):
         self.session = session
         self.current_timeline = timelines[current_timeline_name](session, settings.auth)
         self.entities: list[TUIEntity] = []
-        self.notification_signs: dict[str, tuple[str, str]] = {
-            "favourite": ("★", "#FFD32C"),
-            "mention": ("@", "#82C8E5"),
-            "reblog": ("⮂", "#79BD9A"),
-            "follow": ("+", ""),
-            "follow_request": ("r", ""),
-            "moderation_warning": ("w", "#C04657"),
-        }
+        log("Notifications config:", settings.config.notifications)
         super().__init__()
 
     def on_mount(self) -> None:
@@ -186,7 +183,12 @@ class BaseTimeline(Screen):
                 if entity.content is not None
                 else "",
                 Text("↵", "#87CEFA") if entity.in_reply_to_id is not None else "",
-                Text(*self.notification_signs.get(entity.notification_type) or "")
+                Text(
+                    *self.settings.config.notifications.signs.get(
+                        entity.notification_type
+                    )
+                    or ""
+                )
                 if entity.notification_type is not None
                 else "",
             )
@@ -336,13 +338,11 @@ def tui(ctx):
 
     session = Session()
     session.headers.update(get_headers(settings.auth.access_token))
-    timelines: dict[
-        str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
-    ] = {
+    timelines: dict[str, TimelineCallable] = {
         "Home": home_timeline_generator,
         "Local": local_timeline_generator,
         "Global": global_timeline_generator,
-        "Notifications": notifications_timeline_generator,
+        "Notifications": get_notifications_timeline(settings.config),
         "Personal": personal_timeline_generator,
         "Bookmarks": bookmarks_timeline_generator,
     }

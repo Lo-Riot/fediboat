@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum, auto
 from typing import Optional, Protocol
 
 from pydantic import BaseModel
@@ -6,6 +7,15 @@ from pydantic import BaseModel
 
 class EntityProtocol(Protocol):
     id: str
+
+
+class TUIEntity(BaseModel):
+    id: str | None
+    content: str | None
+    author: str
+    created_at: datetime
+    in_reply_to_id: str | None
+    notification_type: "NotificationTypeEnum | None" = None
 
 
 class MediaAttachment(BaseModel):
@@ -193,9 +203,25 @@ class Report(BaseModel):
     target_account: Account
 
 
+class NotificationTypeEnum(StrEnum):
+    reply = auto()
+    favourite = auto()
+    mention = auto()
+    reblog = auto()
+    follow = auto()
+    follow_request = auto()
+    moderation_warning = auto()
+    severed_relationships = auto()
+    status = auto()
+    poll = auto()
+    update = auto()
+    admin_sign_up = "admin.sign_up"
+    admin_report = "admin.report"
+
+
 class Notification(BaseModel):
     id: str
-    type: str
+    type: NotificationTypeEnum
     created_at: datetime
     account: Account
     status: Optional[Status] = None

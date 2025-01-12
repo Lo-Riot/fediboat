@@ -8,7 +8,6 @@ from pydantic import TypeAdapter
 from requests import Session
 
 from fediboat.api.timelines import (
-    TUIEntity,
     context_to_tui_entities,
     notification_timeline_generator,
     notifications_to_tui_entities,
@@ -17,7 +16,7 @@ from fediboat.api.timelines import (
     statuses_to_tui_entities,
     thread_fetcher,
 )
-from fediboat.entities import Context, Notification, Status
+from fediboat.entities import Context, Notification, Status, TUIEntity
 from fediboat.settings import AuthSettings
 
 
