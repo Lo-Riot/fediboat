@@ -118,11 +118,13 @@ class BaseTimeline(Screen):
     ):
         self.timelines = timelines
         self.current_timeline_name = current_timeline_name
+
         self.settings = settings
+        self.config = settings.config
         self.session = session
+
         self.current_timeline = timelines[current_timeline_name](session, settings.auth)
         self.entities: list[TUIEntity] = []
-        log("Notifications config:", settings.config.notifications)
         super().__init__()
 
     def on_mount(self) -> None:
@@ -162,7 +164,7 @@ class BaseTimeline(Screen):
     def action_post_status(self) -> None:
         with self.app.suspend():
             with tempfile.NamedTemporaryFile() as tmp:
-                subprocess.run([self.settings.config.editor, tmp.name])
+                subprocess.run([self.config.editor, tmp.name])
                 content = tmp.read().decode("utf-8")
 
             if not content:
@@ -175,22 +177,24 @@ class BaseTimeline(Screen):
         timeline.clear()
         for row_index, entity in enumerate(self.entities):
             created_at = entity.created_at.astimezone()
+            content: str = entity.content or ""
+            is_reply: str = ""
+            if entity.in_reply_to_id is not None:
+                is_reply = "↵"
+
+            notification_type: tuple[str, str] = ("", "")
+            if entity.notification_type is not None:
+                notification_type = self.config.notifications.signs.get(
+                    entity.notification_type, notification_type
+                )
+
             timeline.add_row(
                 Text(str(row_index + 1), "#708090"),
                 Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
                 Text(entity.author, "#DDA0DD"),
-                Text(md(entity.content), "#F5DEB3")
-                if entity.content is not None
-                else "",
-                Text("↵", "#87CEFA") if entity.in_reply_to_id is not None else "",
-                Text(
-                    *self.settings.config.notifications.signs.get(
-                        entity.notification_type
-                    )
-                    or ""
-                )
-                if entity.notification_type is not None
-                else "",
+                Text(md(content), "#F5DEB3"),
+                Text(is_reply, "#87CEFA"),
+                Text(*notification_type),
             )
 
     def action_open_thread(self) -> None:
