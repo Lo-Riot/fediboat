@@ -1,4 +1,4 @@
-from typing import Callable, Generator
+from typing import Callable, Generator, TypeAlias
 import tempfile
 import subprocess
 
@@ -32,6 +32,10 @@ from fediboat.api.timelines import (
 )
 from fediboat.cli import cli
 from fediboat.settings import AuthSettings, Settings, load_settings
+
+TimelineCallable: TypeAlias = Callable[
+    [Session, AuthSettings], Generator[list[TUIEntity]]
+]
 
 
 class Jump(ModalScreen[int]):
@@ -103,9 +107,7 @@ class BaseTimeline(Screen):
 
     def __init__(
         self,
-        timelines: dict[
-            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
-        ],
+        timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
         current_timeline_name: str = "Home",
@@ -252,9 +254,7 @@ class BaseTimeline(Screen):
 class Timeline(BaseTimeline):
     def __init__(
         self,
-        timelines: dict[
-            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
-        ],
+        timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
         current_timeline_name: str = "Home",
@@ -292,9 +292,7 @@ class Timeline(BaseTimeline):
 class ThreadTimeline(BaseTimeline):
     def __init__(
         self,
-        timelines: dict[
-            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
-        ],
+        timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
         fetch_thread: Callable[..., list[TUIEntity]],
@@ -314,9 +312,7 @@ class FediboatApp(App):
 
     def __init__(
         self,
-        timelines: dict[
-            str, Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]
-        ],
+        timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
     ):

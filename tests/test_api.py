@@ -159,10 +159,9 @@ def test_timeline_api(
     )
     assert len(response_entities) == 1
     assert len(expected_response.new.validated) == 1
-    assert response_entities[0] == expected_response.new.validated[0]
+    assert response_entities == expected_response.new.validated
 
     response_mock.json.return_value = expected_response.old.json
-
     response_mock.links = {
         "next": {
             "url": f"{settings.instance_url}/api/endpoint?max_id=7163058",
@@ -170,6 +169,9 @@ def test_timeline_api(
         }
     }
     response_entities = next(timeline)
+    assert len(expected_response.old.validated) == 1
+    assert response_entities == expected_response.old.validated
+
     with pytest.raises(StopIteration):
         response_entities = next(timeline)
 
