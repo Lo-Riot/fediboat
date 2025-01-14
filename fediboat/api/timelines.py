@@ -1,8 +1,8 @@
 from typing import Callable, Generator, Sequence, TypeAlias, TypeVar
+from urllib.parse import urlencode
 
-import requests
-from requests import Session
 from pydantic import TypeAdapter
+from requests import Session
 
 from fediboat.entities import (
     Context,
@@ -23,10 +23,11 @@ def _timeline_generator(
     validator: TypeAdapter[list[Entity]],
     **query_params: QueryParams,
 ) -> Generator[list[Entity]]:
-    next_url: str = api_endpoint
+    next_url: str = f"{api_endpoint}?{urlencode(query_params, doseq=True)}"
     while next_url:
-        resp = session.get(next_url, params=query_params)
-        yield validator.validate_python(resp.json())
+        resp = session.get(next_url)
+        resp_json = resp.json()
+        yield validator.validate_python(resp_json)
 
         if resp.links.get("next") is None or resp.links["next"]["url"] == next_url:
             return
