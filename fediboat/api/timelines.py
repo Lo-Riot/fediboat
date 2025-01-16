@@ -35,7 +35,7 @@ def _timeline_generator(
         next_url = resp.links["next"]["url"]
 
 
-def status_to_tui_entity(status: Status) -> TUIEntity:
+def status_to_entity(status: Status) -> TUIEntity:
     return TUIEntity(
         id=status.id,
         content=status.content,
@@ -45,29 +45,36 @@ def status_to_tui_entity(status: Status) -> TUIEntity:
     )
 
 
-def statuses_to_tui_entities(statuses: list[Status]) -> list[TUIEntity]:
-    return [status_to_tui_entity(status) for status in statuses]
+def statuses_to_entities(statuses: list[Status]) -> list[TUIEntity]:
+    return [status_to_entity(status) for status in statuses]
 
 
-def notifications_to_tui_entities(notifications: list[Notification]) -> list[TUIEntity]:
-    return [
-        TUIEntity(
-            id=notification.status.id if notification.status else None,
-            content=notification.status.content if notification.status else None,
-            author=notification.account.acct,
-            created_at=notification.created_at,
-            in_reply_to_id=notification.status.in_reply_to_id
-            if notification.status
-            else None,
-            notification_type=notification.type,
+def notifications_to_entities(notifications: list[Notification]) -> list[TUIEntity]:
+    entities: list[TUIEntity] = []
+    for notification in notifications:
+        id = content = in_reply_to_id = None
+
+        if notification.status is not None:
+            id = notification.status.id
+            content = notification.status.content
+            in_reply_to_id = notification.status.in_reply_to_id
+
+        entities.append(
+            TUIEntity(
+                id=id,
+                content=content,
+                author=notification.account.acct,
+                created_at=notification.created_at,
+                in_reply_to_id=in_reply_to_id,
+                notification_type=notification.type,
+            )
         )
-        for notification in notifications
-    ]
+    return entities
 
 
-def context_to_tui_entities(context: Context, status: TUIEntity) -> list[TUIEntity]:
-    ancestors = statuses_to_tui_entities(context.ancestors)
-    descendants = statuses_to_tui_entities(context.descendants)
+def context_to_entities(context: Context, status: TUIEntity) -> list[TUIEntity]:
+    ancestors = statuses_to_entities(context.ancestors)
+    descendants = statuses_to_entities(context.descendants)
     return ancestors + [status] + descendants
 
 
@@ -77,7 +84,7 @@ def status_timeline_generator(
     for statuses in _timeline_generator(
         session, api_endpoint, TypeAdapter(list[Status]), **query_params
     ):
-        yield statuses_to_tui_entities(statuses)
+        yield statuses_to_entities(statuses)
 
 
 def notification_timeline_generator(
@@ -86,7 +93,7 @@ def notification_timeline_generator(
     for notifications in _timeline_generator(
         session, api_endpoint, TypeAdapter(list[Notification]), **query_params
     ):
-        yield notifications_to_tui_entities(notifications)
+        yield notifications_to_entities(notifications)
 
 
 def home_timeline_generator(
@@ -154,7 +161,7 @@ def thread_fetcher(
             f"{settings.instance_url}/api/v1/statuses/{status.id}/context"
         ).json()
         context = Context.model_validate(context_json)
-        return context_to_tui_entities(context, status)
+        return context_to_entities(context, status)
 
     return fetch_thread
 

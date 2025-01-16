@@ -8,12 +8,12 @@ from pydantic import TypeAdapter
 from requests import Session
 
 from fediboat.api.timelines import (
-    context_to_tui_entities,
+    context_to_entities,
     notification_timeline_generator,
-    notifications_to_tui_entities,
+    notifications_to_entities,
     status_timeline_generator,
-    status_to_tui_entity,
-    statuses_to_tui_entities,
+    status_to_entity,
+    statuses_to_entities,
     thread_fetcher,
 )
 from fediboat.entities import Context, Notification, Status, TUIEntity
@@ -53,16 +53,16 @@ def expected_statuses(
     with open("tests/data/statuses.json") as f:
         new_json = json.load(f)
     new_statuses = statuses_validator.validate_python(new_json)
-    new_tui_entities = statuses_to_tui_entities(new_statuses)
+    new_entities = statuses_to_entities(new_statuses)
 
     with open("tests/data/old_statuses.json") as f:
         old_json = json.load(f)
     old_statuses = statuses_validator.validate_python(old_json)
-    old_tui_entities = statuses_to_tui_entities(old_statuses)
+    old_entities = statuses_to_entities(old_statuses)
 
     return ExpectedResponse(
-        ResponseData(new_json, new_tui_entities),
-        ResponseData(old_json, old_tui_entities),
+        ResponseData(new_json, new_entities),
+        ResponseData(old_json, old_entities),
     )
 
 
@@ -73,16 +73,16 @@ def expected_notifications(
     with open("tests/data/notifications.json") as f:
         new_json = json.load(f)
     new_notifications = notifications_validator.validate_python(new_json)
-    new_tui_entities = notifications_to_tui_entities(new_notifications)
+    new_entities = notifications_to_entities(new_notifications)
 
     with open("tests/data/old_notifications.json") as f:
         old_json = json.load(f)
     old_notifications = notifications_validator.validate_python(old_json)
-    old_tui_entities = notifications_to_tui_entities(old_notifications)
+    old_entities = notifications_to_entities(old_notifications)
 
     return ExpectedResponse(
-        ResponseData(new_json, new_tui_entities),
-        ResponseData(old_json, old_tui_entities),
+        ResponseData(new_json, new_entities),
+        ResponseData(old_json, old_entities),
     )
 
 
@@ -90,28 +90,28 @@ def expected_notifications(
 def expected_thread() -> ExpectedThreadResponse:
     with open("tests/data/thread_status.json") as f:
         thread_status = Status.model_validate_json(f.read())
-    thread_tui_entity = status_to_tui_entity(thread_status)
+    thread_entity = status_to_entity(thread_status)
 
     with open("tests/data/new_thread_statuses.json") as f:
         new_json = json.load(f)
     new_context = Context.model_validate(new_json)
-    new_tui_entities = context_to_tui_entities(new_context, thread_tui_entity)
+    new_entities = context_to_entities(new_context, thread_entity)
 
     with open("tests/data/old_thread_statuses.json") as f:
         old_json = json.load(f)
     old_context = Context.model_validate(old_json)
-    old_tui_entities = context_to_tui_entities(old_context, thread_tui_entity)
+    old_entities = context_to_entities(old_context, thread_entity)
 
     return ExpectedThreadResponse(
         ResponseData(
             new_json,
-            new_tui_entities,
+            new_entities,
         ),
         ResponseData(
             old_json,
-            old_tui_entities,
+            old_entities,
         ),
-        thread_tui_entity,
+        thread_entity,
     )
 
 
@@ -154,7 +154,7 @@ def test_timeline_api(
 
     response_entities = next(timeline)
     get_request_mock.assert_called_with(
-        f"{settings.instance_url}/api/endpoint", params={"limit": 20}
+        f"{settings.instance_url}/api/endpoint?limit=20"
     )
     assert len(response_entities) == 1
     assert len(expected_response.new.validated) == 1
