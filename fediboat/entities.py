@@ -10,11 +10,8 @@ class EntityProtocol(Protocol):
 
 
 class TUIEntity(BaseModel):
-    id: str | None
-    content: str | None
+    status: "Status | None"
     author: str
-    created_at: datetime
-    in_reply_to_id: str | None
     notification_type: "NotificationTypeEnum | None" = None
 
 

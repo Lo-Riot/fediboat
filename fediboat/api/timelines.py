@@ -37,11 +37,8 @@ def _timeline_generator(
 
 def status_to_entity(status: Status) -> TUIEntity:
     return TUIEntity(
-        id=status.id,
-        content=status.content,
+        status=status,
         author=status.account.acct,
-        created_at=status.created_at,
-        in_reply_to_id=status.in_reply_to_id,
     )
 
 
@@ -52,30 +49,20 @@ def statuses_to_entities(statuses: list[Status]) -> list[TUIEntity]:
 def notifications_to_entities(notifications: list[Notification]) -> list[TUIEntity]:
     entities: list[TUIEntity] = []
     for notification in notifications:
-        id = content = in_reply_to_id = None
-
-        if notification.status is not None:
-            id = notification.status.id
-            content = notification.status.content
-            in_reply_to_id = notification.status.in_reply_to_id
-
         entities.append(
             TUIEntity(
-                id=id,
-                content=content,
+                status=notification.status,
                 author=notification.account.acct,
-                created_at=notification.created_at,
-                in_reply_to_id=in_reply_to_id,
                 notification_type=notification.type,
             )
         )
     return entities
 
 
-def context_to_entities(context: Context, status: TUIEntity) -> list[TUIEntity]:
+def context_to_entities(context: Context, status: Status) -> list[TUIEntity]:
     ancestors = statuses_to_entities(context.ancestors)
     descendants = statuses_to_entities(context.descendants)
-    return ancestors + [status] + descendants
+    return ancestors + [status_to_entity(status)] + descendants
 
 
 def status_timeline_generator(
@@ -154,7 +141,7 @@ def get_notifications_timeline(
 
 
 def thread_fetcher(
-    session: Session, settings: AuthSettings, status: TUIEntity
+    session: Session, settings: AuthSettings, status: Status
 ) -> Callable[..., list[TUIEntity]]:
     def fetch_thread() -> list[TUIEntity]:
         context_json = session.get(
@@ -166,9 +153,19 @@ def thread_fetcher(
     return fetch_thread
 
 
-def post_status(content: str, session: Session, settings: AuthSettings) -> Status:
+def post_status(
+    content: str,
+    session: Session,
+    settings: AuthSettings,
+    in_reply_to_id: str | None = None,
+    visibility: str = "public",
+) -> Status:
     status = session.post(
         f"{settings.instance_url}/api/v1/statuses",
-        data={"status": content},
+        data={
+            "status": content,
+            "in_reply_to_id": in_reply_to_id,
+            "visibility": visibility,
+        },
     )
     return Status.model_validate(status.json())

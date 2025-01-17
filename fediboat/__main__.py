@@ -99,6 +99,7 @@ class BaseTimeline(Screen):
         ("g", "switch_timeline", "Switch timeline"),
         ("t", "open_thread", "Open thread"),
         ("p", "post_status", "Post"),
+        ("R", "reply", "Reply"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
         ("l", "select_row"),
@@ -161,26 +162,57 @@ class BaseTimeline(Screen):
     def action_update_timeline_new(self) -> None:
         pass
 
-    def action_post_status(self) -> None:
-        with self.app.suspend():
-            with tempfile.NamedTemporaryFile() as tmp:
-                subprocess.run([self.config.editor, tmp.name])
-                content = tmp.read().decode("utf-8")
+    def action_post_status(
+        self,
+        in_reply_to_id: str | None = None,
+        mentions: str | None = None,
+        visibility: str = "public",
+    ) -> None:
+        with self.app.suspend(), tempfile.NamedTemporaryFile() as tmp:
+            if mentions is not None:
+                tmp.write(mentions.encode("utf-8"))
+                tmp.seek(0)
+            subprocess.run([self.config.editor, tmp.name])
+            content = tmp.read().decode("utf-8")
 
-            if not content:
+            if not content or content == mentions:
                 return
 
-        post_status(content, self.session, self.settings.auth)
+        post_status(
+            content,
+            self.session,
+            self.settings.auth,
+            in_reply_to_id,
+            visibility,
+        )
+
+    def action_reply(self):
+        timeline = self.query_one(DataTable)
+        selected_entity = self.entities[timeline.cursor_row]
+        if selected_entity.status is None:
+            return
+
+        mentions = ""
+        for mention in selected_entity.status.mentions:
+            mentions += f"@{mention.acct} "
+
+        if selected_entity.status.account.acct not in mentions:
+            mentions = f"@{selected_entity.status.account.acct} {mentions}"
+        self.action_post_status(
+            selected_entity.status.id, mentions, selected_entity.status.visibility
+        )
 
     def _add_rows(self) -> None:
         timeline = self.query_one(DataTable)
         timeline.clear()
         for row_index, entity in enumerate(self.entities):
-            created_at = entity.created_at.astimezone()
-            content: str = entity.content or ""
-            is_reply: str = ""
-            if entity.in_reply_to_id is not None:
-                is_reply = "↵"
+            created_at = content = is_reply = ""
+            if entity.status is not None:
+                created_at = entity.status.created_at.astimezone().strftime(
+                    "%b %d %H:%M"
+                )
+                content: str = entity.status.content
+                is_reply = "↵" if entity.status.in_reply_to_id else ""
 
             notification_type: tuple[str, str] = ("", "")
             if entity.notification_type is not None:
@@ -190,7 +222,7 @@ class BaseTimeline(Screen):
 
             timeline.add_row(
                 Text(str(row_index + 1), "#708090"),
-                Text(created_at.strftime("%b %d %H:%M"), "#B0C4DE"),
+                Text(created_at, "#B0C4DE"),
                 Text(entity.author, "#DDA0DD"),
                 Text(md(content), "#F5DEB3"),
                 Text(is_reply, "#87CEFA"),
@@ -200,9 +232,13 @@ class BaseTimeline(Screen):
     def action_open_thread(self) -> None:
         timeline = self.query_one(DataTable)
         row_index = timeline.cursor_row
-        selected_status = self.entities[row_index]
+        selected_entity = self.entities[row_index]
+        if selected_entity.status is None:
+            return
 
-        fetch_thread = thread_fetcher(self.session, self.settings.auth, selected_status)
+        fetch_thread = thread_fetcher(
+            self.session, self.settings.auth, selected_entity.status
+        )
         self.app.push_screen(
             ThreadTimeline(
                 self.timelines,
@@ -215,8 +251,11 @@ class BaseTimeline(Screen):
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
         row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        selected_status = self.entities[row_index]
-        markdown = md(selected_status.content)
+        selected_entity = self.entities[row_index]
+        if selected_entity.status is None:
+            return
+
+        markdown = md(selected_entity.status.content)
         self.app.push_screen(StatusContent(markdown))
 
     def on_key(self, event: events.Key):

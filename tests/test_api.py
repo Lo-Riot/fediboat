@@ -33,7 +33,7 @@ class ExpectedResponse:
 
 @dataclass
 class ExpectedThreadResponse(ExpectedResponse):
-    status: TUIEntity
+    status: Status
 
 
 @pytest.fixture
@@ -90,17 +90,16 @@ def expected_notifications(
 def expected_thread() -> ExpectedThreadResponse:
     with open("tests/data/thread_status.json") as f:
         thread_status = Status.model_validate_json(f.read())
-    thread_entity = status_to_entity(thread_status)
 
     with open("tests/data/new_thread_statuses.json") as f:
         new_json = json.load(f)
     new_context = Context.model_validate(new_json)
-    new_entities = context_to_entities(new_context, thread_entity)
+    new_entities = context_to_entities(new_context, thread_status)
 
     with open("tests/data/old_thread_statuses.json") as f:
         old_json = json.load(f)
     old_context = Context.model_validate(old_json)
-    old_entities = context_to_entities(old_context, thread_entity)
+    old_entities = context_to_entities(old_context, thread_status)
 
     return ExpectedThreadResponse(
         ResponseData(
@@ -111,7 +110,7 @@ def expected_thread() -> ExpectedThreadResponse:
             old_json,
             old_entities,
         ),
-        thread_entity,
+        thread_status,
     )
 
 
