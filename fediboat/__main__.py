@@ -9,19 +9,22 @@ from rich.text import Text
 
 from textual import events, log, on
 from textual.app import App, ComposeResult
+from textual.containers import Grid
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     DataTable,
     Footer,
     Header,
     Input,
+    Label,
     Markdown,
 )
 
-from fediboat.api.auth import get_headers
+from fediboat.api.auth import APIError, get_headers
 from fediboat.api.timelines import (
     bookmarks_timeline_generator,
     global_timeline_generator,
+    handle_request_errors,
     home_timeline_generator,
     get_notifications_timeline,
     local_timeline_generator,
@@ -55,6 +58,18 @@ class Jump(ModalScreen[int]):
     @on(Input.Submitted)
     def submit(self) -> None:
         self.dismiss(int(self.query_one(Input).value))
+
+
+class ErrorMessage(ModalScreen):
+    BINDINGS = [("escape", "app.pop_screen"), ("q", "app.pop_screen", "Quit")]
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Grid(Label(self.message, id="message"), id="dialog")
+        yield Footer()
 
 
 class SwitchTimeline(ModalScreen[str]):
@@ -178,15 +193,22 @@ class BaseTimeline(Screen):
             if not content or content == mentions:
                 return
 
-        post_status(
-            content,
-            self.session,
-            self.settings.auth,
-            in_reply_to_id,
-            visibility,
-        )
+        try:
+            post_status(
+                content,
+                self.session,
+                self.settings.auth,
+                in_reply_to_id,
+                visibility,
+            )
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
 
     def action_reply(self):
+        if len(self.entities) == 0:
+            return
+
         timeline = self.query_one(DataTable)
         selected_entity = self.entities[timeline.cursor_row]
         if selected_entity.status is None:
@@ -202,7 +224,7 @@ class BaseTimeline(Screen):
             selected_entity.status.id, mentions, selected_entity.status.visibility
         )
 
-    def _add_rows(self) -> None:
+    def add_rows(self) -> None:
         timeline = self.query_one(DataTable)
         timeline.clear()
         for row_index, entity in enumerate(self.entities):
@@ -211,7 +233,7 @@ class BaseTimeline(Screen):
                 created_at = entity.status.created_at.astimezone().strftime(
                     "%b %d %H:%M"
                 )
-                content: str = entity.status.content
+                content = entity.status.content
                 is_reply = "↵" if entity.status.in_reply_to_id else ""
 
             notification_type: tuple[str, str] = ("", "")
@@ -229,7 +251,14 @@ class BaseTimeline(Screen):
                 Text(*notification_type),
             )
 
+    def log_error_message(self, message: str) -> None:
+        log(f"Current timeline: {self.current_timeline_name}, Error:", message)
+        self.app.push_screen(ErrorMessage(message))
+
     def action_open_thread(self) -> None:
+        if len(self.entities) == 0:
+            return
+
         timeline = self.query_one(DataTable)
         row_index = timeline.cursor_row
         selected_entity = self.entities[row_index]
@@ -250,8 +279,10 @@ class BaseTimeline(Screen):
         )
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
-        row_index = self.query_one(DataTable).get_row_index(row_selected.row_key)
-        selected_entity = self.entities[row_index]
+        if len(self.entities) == 0:
+            return
+
+        selected_entity = self.entities[row_selected.cursor_row]
         if selected_entity.status is None:
             return
 
@@ -310,11 +341,14 @@ class Timeline(BaseTimeline):
     def action_update_timeline_old(self) -> None:
         try:
             new_entities = next(self.current_timeline)
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
         except StopIteration:
             return
 
         self.entities.extend(new_entities)
-        self._add_rows()
+        self.add_rows()
 
     def action_cursor_down(self) -> None:
         timeline = self.query_one(DataTable)
@@ -330,8 +364,12 @@ class Timeline(BaseTimeline):
         self.current_timeline = self.timelines[self.current_timeline_name](
             self.session, self.settings.auth
         )
-        self.entities = next(self.current_timeline)
-        self._add_rows()
+        try:
+            self.entities = next(self.current_timeline)
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+        self.add_rows()
 
 
 class ThreadTimeline(BaseTimeline):
@@ -348,8 +386,12 @@ class ThreadTimeline(BaseTimeline):
         self.screen.sub_title = "Thread Timeline"
 
     def action_update_timeline_new(self) -> None:
-        self.entities = self.fetch_thread()
-        self._add_rows()
+        try:
+            self.entities = self.fetch_thread()
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+        self.add_rows()
 
 
 class FediboatApp(App):
@@ -381,6 +423,7 @@ def tui(ctx):
 
     session = Session()
     session.headers.update(get_headers(settings.auth.access_token))
+    session.hooks["response"].append(handle_request_errors)
     timelines: dict[str, TimelineCallable] = {
         "Home": home_timeline_generator,
         "Local": local_timeline_generator,

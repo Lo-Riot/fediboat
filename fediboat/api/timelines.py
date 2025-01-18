@@ -2,8 +2,9 @@ from typing import Callable, Generator, Sequence, TypeAlias, TypeVar
 from urllib.parse import urlencode
 
 from pydantic import TypeAdapter
-from requests import Session
+from requests import Session, Response, codes
 
+from fediboat.api.auth import APIError
 from fediboat.entities import (
     Context,
     EntityProtocol,
@@ -15,6 +16,12 @@ from fediboat.settings import AuthSettings, Config
 
 Entity = TypeVar("Entity", bound=EntityProtocol)
 QueryParams: TypeAlias = str | int | bool | Sequence[str]
+
+
+def handle_request_errors(resp: Response, *args, **kwargs):
+    if resp.status_code != codes.ok:
+        resp_json = resp.json()
+        raise APIError(resp_json["error"])
 
 
 def _timeline_generator(
@@ -144,10 +151,11 @@ def thread_fetcher(
     session: Session, settings: AuthSettings, status: Status
 ) -> Callable[..., list[TUIEntity]]:
     def fetch_thread() -> list[TUIEntity]:
-        context_json = session.get(
+        resp = session.get(
             f"{settings.instance_url}/api/v1/statuses/{status.id}/context"
-        ).json()
-        context = Context.model_validate(context_json)
+        )
+        resp_json = resp.json()
+        context = Context.model_validate(resp_json)
         return context_to_entities(context, status)
 
     return fetch_thread
@@ -160,7 +168,7 @@ def post_status(
     in_reply_to_id: str | None = None,
     visibility: str = "public",
 ) -> Status:
-    status = session.post(
+    resp = session.post(
         f"{settings.instance_url}/api/v1/statuses",
         data={
             "status": content,
@@ -168,4 +176,5 @@ def post_status(
             "visibility": visibility,
         },
     )
-    return Status.model_validate(status.json())
+    resp_json = resp.json()
+    return Status.model_validate(resp_json)
