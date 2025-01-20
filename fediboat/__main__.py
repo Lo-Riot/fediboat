@@ -3,7 +3,6 @@ import tempfile
 from typing import Callable, Generator, TypeAlias
 
 import click
-from markdownify import markdownify as md
 from requests import Session
 from rich.text import Text
 
@@ -233,7 +232,9 @@ class BaseTimeline(Screen):
                 created_at = entity.status.created_at.astimezone().strftime(
                     "%b %d %H:%M"
                 )
-                content = entity.status.content
+                content = " ".join(
+                    line.strip() for line in entity.status.content[:50].splitlines()
+                )
                 is_reply = "↵" if entity.status.in_reply_to_id else ""
 
             notification_type: tuple[str, str] = ("", "")
@@ -246,7 +247,7 @@ class BaseTimeline(Screen):
                 Text(str(row_index + 1), "#708090"),
                 Text(created_at, "#B0C4DE"),
                 Text(entity.author, "#DDA0DD"),
-                Text(md(content), "#F5DEB3"),
+                Text(content, "#F5DEB3"),
                 Text(is_reply, "#87CEFA"),
                 Text(*notification_type),
             )
@@ -286,7 +287,7 @@ class BaseTimeline(Screen):
         if selected_entity.status is None:
             return
 
-        markdown = md(selected_entity.status.content)
+        markdown = selected_entity.status.content
         self.app.push_screen(StatusContent(markdown))
 
     def on_key(self, event: events.Key):

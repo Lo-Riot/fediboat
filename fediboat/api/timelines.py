@@ -1,8 +1,10 @@
 from typing import Callable, Generator, Sequence, TypeAlias, TypeVar
 from urllib.parse import urlencode
 
+from bs4 import BeautifulSoup
 from pydantic import TypeAdapter
-from requests import Session, Response, codes
+from requests import Response, Session, codes
+from textual import log
 
 from fediboat.api.auth import APIError
 from fediboat.entities import (
@@ -24,6 +26,25 @@ def handle_request_errors(resp: Response, *args, **kwargs):
         raise APIError(resp_json["error"])
 
 
+def _html_to_plain_text(status: Status) -> Status:
+    soup = BeautifulSoup(status.content, "html.parser")
+    log("id:", status.id)
+    log(f"html:\n{soup.prettify()}")
+
+    for element in soup.find_all("br"):
+        element.replace_with("  \n")
+
+    plain_text = ""
+    for element in soup.find_all("p"):
+        plain_text += element.get_text() + "\n\n"
+
+    if not plain_text:
+        plain_text = soup.get_text()
+
+    log("plain text:", repr(plain_text))
+    return status.model_copy(update={"content": plain_text})
+
+
 def _timeline_generator(
     session: Session,
     api_endpoint: str,
@@ -43,9 +64,10 @@ def _timeline_generator(
 
 
 def status_to_entity(status: Status) -> TUIEntity:
+    cleaned_status = _html_to_plain_text(status)
     return TUIEntity(
-        status=status,
-        author=status.account.acct,
+        status=cleaned_status,
+        author=cleaned_status.account.acct,
     )
 
 
@@ -56,9 +78,13 @@ def statuses_to_entities(statuses: list[Status]) -> list[TUIEntity]:
 def notifications_to_entities(notifications: list[Notification]) -> list[TUIEntity]:
     entities: list[TUIEntity] = []
     for notification in notifications:
+        cleaned_status = None
+        if notification.status is not None:
+            cleaned_status = _html_to_plain_text(notification.status)
+
         entities.append(
             TUIEntity(
-                status=notification.status,
+                status=cleaned_status,
                 author=notification.account.acct,
                 notification_type=notification.type,
             )
