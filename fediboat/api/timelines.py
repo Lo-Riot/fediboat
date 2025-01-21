@@ -64,10 +64,14 @@ def _timeline_generator(
 
 
 def status_to_entity(status: Status) -> TUIEntity:
-    cleaned_status = _html_to_plain_text(status)
+    if status.reblog is not None:
+        cleaned_status = _html_to_plain_text(status.reblog)
+    else:
+        cleaned_status = _html_to_plain_text(status)
+
     return TUIEntity(
         status=cleaned_status,
-        author=cleaned_status.account.acct,
+        author=status.account.acct,
     )
 
 
@@ -86,7 +90,7 @@ def notifications_to_entities(notifications: list[Notification]) -> list[TUIEnti
             TUIEntity(
                 status=cleaned_status,
                 author=notification.account.acct,
-                notification_type=notification.type,
+                sign=notification.type,
             )
         )
     return entities

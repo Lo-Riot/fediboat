@@ -237,11 +237,9 @@ class BaseTimeline(Screen):
                 )
                 is_reply = "↵" if entity.status.in_reply_to_id else ""
 
-            notification_type: tuple[str, str] = ("", "")
-            if entity.notification_type is not None:
-                notification_type = self.config.notifications.signs.get(
-                    entity.notification_type, notification_type
-                )
+            sign: tuple[str, str] = ("", "")
+            if entity.sign is not None:
+                sign = self.config.notifications.signs.get(entity.sign, sign)
 
             timeline.add_row(
                 Text(str(row_index + 1), "#708090"),
@@ -249,7 +247,7 @@ class BaseTimeline(Screen):
                 Text(entity.author, "#DDA0DD"),
                 Text(content, "#F5DEB3"),
                 Text(is_reply, "#87CEFA"),
-                Text(*notification_type),
+                Text(*sign),
             )
 
     def log_error_message(self, message: str) -> None:

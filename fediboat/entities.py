@@ -12,7 +12,7 @@ class EntityProtocol(Protocol):
 class TUIEntity(BaseModel):
     status: "Status | None"
     author: str
-    notification_type: "NotificationTypeEnum | None" = None
+    sign: "NotificationTypeEnum | None" = None
 
 
 class MediaAttachment(BaseModel):
