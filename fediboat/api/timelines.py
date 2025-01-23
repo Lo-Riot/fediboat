@@ -16,8 +16,22 @@ from fediboat.entities import (
 )
 from fediboat.settings import AuthSettings, Config
 
+TimelineCallable: TypeAlias = Callable[
+    [Session, AuthSettings], Generator[list[TUIEntity]]
+]
 Entity = TypeVar("Entity", bound=EntityProtocol)
 QueryParams: TypeAlias = str | int | bool | Sequence[str]
+
+
+def get_timelines(config: Config) -> dict[str, TimelineCallable]:
+    return {
+        "Home": home_timeline_generator,
+        "Local": local_timeline_generator,
+        "Global": global_timeline_generator,
+        "Notifications": get_notifications_timeline(config),
+        "Personal": personal_timeline_generator,
+        "Bookmarks": bookmarks_timeline_generator,
+    }
 
 
 def handle_request_errors(resp: Response, *args, **kwargs):

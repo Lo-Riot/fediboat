@@ -4,14 +4,10 @@ import pytest
 from rich.text import Text
 from textual.widgets import DataTable
 
-from fediboat.__main__ import (
-    FediboatApp,
-    StatusContent,
-    SwitchTimeline,
-    ThreadTimeline,
-    Timeline,
-    get_timelines,
-)
+from fediboat.__main__ import FediboatApp
+from fediboat.api.timelines import get_timelines
+from fediboat.screens.base import StatusContent
+from fediboat.screens.timelines import SwitchTimeline, ThreadTimeline, Timeline
 from fediboat.settings import AuthSettings, Config, Settings
 from tests.test_api import ExpectedResponse, ExpectedThreadResponse
 
@@ -32,8 +28,13 @@ def app(
     settings: AuthSettings, session: MagicMock, expected_statuses: ExpectedResponse
 ) -> FediboatApp:
     all_settings = Settings(settings, Config())
-    timelines = get_timelines(all_settings.config)
-    return FediboatApp(timelines, all_settings, session, refresh_at_start=False)
+    timeline = Timeline(
+        get_timelines(all_settings.config),
+        all_settings,
+        session,
+        refresh_at_start=False,
+    )
+    return FediboatApp(timeline)
 
 
 @pytest.mark.parametrize(
