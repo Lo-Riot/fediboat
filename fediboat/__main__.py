@@ -35,6 +35,7 @@ from fediboat.cli import cli
 from fediboat.entities import TUIEntity
 from fediboat.settings import (
     AuthSettings,
+    Config,
     Settings,
     load_settings,
 )
@@ -130,6 +131,7 @@ class BaseTimeline(Screen):
         settings: Settings,
         session: Session,
         current_timeline_name: str = "Home",
+        refresh_at_start: bool = True,
     ):
         self.timelines = timelines
         self.current_timeline_name = current_timeline_name
@@ -140,6 +142,7 @@ class BaseTimeline(Screen):
 
         self.current_timeline = timelines[current_timeline_name](session, settings.auth)
         self.entities: list[TUIEntity] = []
+        self.refresh_at_start = refresh_at_start
         super().__init__()
 
     def on_mount(self) -> None:
@@ -151,7 +154,8 @@ class BaseTimeline(Screen):
         timeline.add_column("title", width=50)
         timeline.add_column("is_reply", width=1)
         timeline.add_column("notification_type", width=1)
-        self.action_update_timeline_new()
+        if self.refresh_at_start:
+            self.action_update_timeline_new()
 
     def compose(self) -> ComposeResult:
         yield DataTable(id="timeline", cursor_type="row", show_header=False)
@@ -333,8 +337,11 @@ class Timeline(BaseTimeline):
         settings: Settings,
         session: Session,
         current_timeline_name: str = "Home",
+        refresh_at_start: bool = True,
     ):
-        super().__init__(timelines, settings, session, current_timeline_name)
+        super().__init__(
+            timelines, settings, session, current_timeline_name, refresh_at_start
+        )
         self.screen.sub_title = f"{current_timeline_name} Timeline"
 
     def action_update_timeline_old(self) -> None:
@@ -401,16 +408,39 @@ class FediboatApp(App):
         timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
+        current_timeline_name: str = "Home",
+        refresh_at_start: bool = True,
     ):
         self.timelines = timelines
         self.settings = settings
         self.session = session
+        self.current_timeline_name = current_timeline_name
+        self.refresh_at_start = refresh_at_start
         super().__init__()
 
     def on_mount(self) -> None:
         self.title = "Fediboat"
         self.install_screen(StatusContent(), name="status")
-        self.push_screen(Timeline(self.timelines, self.settings, self.session))
+        self.push_screen(
+            Timeline(
+                self.timelines,
+                self.settings,
+                self.session,
+                self.current_timeline_name,
+                self.refresh_at_start,
+            )
+        )
+
+
+def get_timelines(config: Config) -> dict[str, TimelineCallable]:
+    return {
+        "Home": home_timeline_generator,
+        "Local": local_timeline_generator,
+        "Global": global_timeline_generator,
+        "Notifications": get_notifications_timeline(config),
+        "Personal": personal_timeline_generator,
+        "Bookmarks": bookmarks_timeline_generator,
+    }
 
 
 @cli.command()
@@ -423,16 +453,8 @@ def tui(ctx):
     session = Session()
     session.headers.update(get_headers(settings.auth.access_token))
     session.hooks["response"].append(handle_request_errors)
-    timelines: dict[str, TimelineCallable] = {
-        "Home": home_timeline_generator,
-        "Local": local_timeline_generator,
-        "Global": global_timeline_generator,
-        "Notifications": get_notifications_timeline(settings.config),
-        "Personal": personal_timeline_generator,
-        "Bookmarks": bookmarks_timeline_generator,
-    }
 
-    app = FediboatApp(timelines, settings, session)
+    app = FediboatApp(get_timelines(settings.config), settings, session)
     app.run()
 
 

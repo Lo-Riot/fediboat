@@ -1,22 +1,15 @@
-import json
 from dataclasses import dataclass
 from typing import Any, Callable, Generator, NamedTuple
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import TypeAdapter
-from requests import Session
 
 from fediboat.api.timelines import (
-    context_to_entities,
     notification_timeline_generator,
-    notifications_to_entities,
     status_timeline_generator,
-    status_to_entity,
-    statuses_to_entities,
     thread_fetcher,
 )
-from fediboat.entities import Context, Notification, Status, TUIEntity
+from fediboat.entities import Status, TUIEntity
 from fediboat.settings import AuthSettings
 
 
@@ -36,97 +29,6 @@ class ExpectedThreadResponse(ExpectedResponse):
     status: Status
 
 
-@pytest.fixture
-def statuses_validator() -> TypeAdapter[list[Status]]:
-    return TypeAdapter(list[Status])
-
-
-@pytest.fixture
-def notifications_validator() -> TypeAdapter[list[Notification]]:
-    return TypeAdapter(list[Notification])
-
-
-@pytest.fixture
-def expected_statuses(
-    statuses_validator: TypeAdapter[list[Status]],
-) -> ExpectedResponse:
-    with open("tests/data/statuses.json") as f:
-        new_json = json.load(f)
-    new_statuses = statuses_validator.validate_python(new_json)
-    new_entities = statuses_to_entities(new_statuses)
-
-    with open("tests/data/old_statuses.json") as f:
-        old_json = json.load(f)
-    old_statuses = statuses_validator.validate_python(old_json)
-    old_entities = statuses_to_entities(old_statuses)
-
-    return ExpectedResponse(
-        ResponseData(new_json, new_entities),
-        ResponseData(old_json, old_entities),
-    )
-
-
-@pytest.fixture
-def expected_notifications(
-    notifications_validator: TypeAdapter[list[Notification]],
-) -> ExpectedResponse:
-    with open("tests/data/notifications.json") as f:
-        new_json = json.load(f)
-    new_notifications = notifications_validator.validate_python(new_json)
-    new_entities = notifications_to_entities(new_notifications)
-
-    with open("tests/data/old_notifications.json") as f:
-        old_json = json.load(f)
-    old_notifications = notifications_validator.validate_python(old_json)
-    old_entities = notifications_to_entities(old_notifications)
-
-    return ExpectedResponse(
-        ResponseData(new_json, new_entities),
-        ResponseData(old_json, old_entities),
-    )
-
-
-@pytest.fixture
-def expected_thread() -> ExpectedThreadResponse:
-    with open("tests/data/thread_status.json") as f:
-        thread_status = Status.model_validate_json(f.read())
-
-    with open("tests/data/new_thread_statuses.json") as f:
-        new_json = json.load(f)
-    new_context = Context.model_validate(new_json)
-    new_entities = context_to_entities(new_context, thread_status)
-
-    with open("tests/data/old_thread_statuses.json") as f:
-        old_json = json.load(f)
-    old_context = Context.model_validate(old_json)
-    old_entities = context_to_entities(old_context, thread_status)
-
-    return ExpectedThreadResponse(
-        ResponseData(
-            new_json,
-            new_entities,
-        ),
-        ResponseData(
-            old_json,
-            old_entities,
-        ),
-        thread_status,
-    )
-
-
-@pytest.fixture
-def settings() -> AuthSettings:
-    return AuthSettings(
-        id="123456",
-        instance_url="http://localhost",
-        instance_domain="localhost",
-        full_username="test_user@localhost",
-        access_token="123",
-        client_id="1234",
-        client_secret="12345",
-    )
-
-
 @pytest.mark.parametrize(
     "timeline_generator,expected_entities_fixture",
     [
@@ -135,6 +37,7 @@ def settings() -> AuthSettings:
     ],
 )
 def test_timeline_api(
+    session: MagicMock,
     timeline_generator: Callable[..., Generator[list[TUIEntity]]],
     expected_entities_fixture: str,
     settings: AuthSettings,
@@ -144,17 +47,14 @@ def test_timeline_api(
     expected_response: ExpectedResponse = request.getfixturevalue(
         expected_entities_fixture
     )
-    response_mock = MagicMock(**{"json.return_value": expected_response.new.json})
-    get_request_mock = MagicMock(return_value=response_mock)
-    session_mock = MagicMock(spec_set=Session, get=get_request_mock)
+    response_mock = session.get.return_value
+    response_mock.json.return_value = expected_response.new.json
     timeline = timeline_generator(
-        session_mock, f"{settings.instance_url}/api/endpoint", limit=20
+        session, f"{settings.instance_url}/api/endpoint", limit=20
     )
 
     response_entities = next(timeline)
-    get_request_mock.assert_called_with(
-        f"{settings.instance_url}/api/endpoint?limit=20"
-    )
+    session.get.assert_called_with(f"{settings.instance_url}/api/endpoint?limit=20")
     assert len(response_entities) == 1
     assert len(expected_response.new.validated) == 1
     assert response_entities == expected_response.new.validated
@@ -174,14 +74,15 @@ def test_timeline_api(
         response_entities = next(timeline)
 
 
-def test_thread_api(expected_thread: ExpectedThreadResponse, settings: AuthSettings):
-    response_mock = MagicMock(**{"json.return_value": expected_thread.old.json})
-    get_request_mock = MagicMock(return_value=response_mock)
-    session_mock = MagicMock(spec_set=Session, get=get_request_mock)
+def test_thread_api(
+    session: MagicMock, expected_thread: ExpectedThreadResponse, settings: AuthSettings
+):
+    response_mock = session.get.return_value
+    response_mock.json.return_value = expected_thread.old.json
 
-    fetch_thread = thread_fetcher(session_mock, settings, expected_thread.status)
+    fetch_thread = thread_fetcher(session, settings, expected_thread.status)
     statuses = fetch_thread()
-    get_request_mock.assert_called_with(
+    session.get.assert_called_with(
         f"{settings.instance_url}/api/v1/statuses/{expected_thread.status.id}/context"
     )
     assert statuses == expected_thread.old.validated
