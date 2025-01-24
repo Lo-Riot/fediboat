@@ -251,12 +251,15 @@ class TimelineScreen(Screen):
         if selected_entity.status is None:
             return
 
+        status_acct = selected_entity.status.account.acct
+        user_acct = self.settings.auth.full_username.split("@")[0]
         mentions = ""
         for mention in selected_entity.status.mentions:
-            mentions += f"@{mention.acct} "
+            if mention.acct != user_acct:
+                mentions += f"@{mention.acct} "
 
-        if selected_entity.status.account.acct not in mentions:
-            mentions = f"@{selected_entity.status.account.acct} {mentions}"
+        if status_acct not in mentions and status_acct != user_acct:
+            mentions = f"@{status_acct} {mentions}"
         self.action_post_status(
             selected_entity.status.id, mentions, selected_entity.status.visibility
         )
