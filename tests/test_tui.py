@@ -6,8 +6,7 @@ from textual.widgets import DataTable
 
 from fediboat.__main__ import FediboatApp
 from fediboat.api.timelines import get_timelines
-from fediboat.screens.base import StatusContent
-from fediboat.screens.timelines import SwitchTimeline, ThreadTimeline, Timeline
+from fediboat.screens import StatusContent, SwitchTimeline, TimelineScreen
 from fediboat.settings import AuthSettings, Config, Settings
 from tests.test_api import ExpectedResponse, ExpectedThreadResponse
 
@@ -28,7 +27,7 @@ def app(
     settings: AuthSettings, session: MagicMock, expected_statuses: ExpectedResponse
 ) -> FediboatApp:
     all_settings = Settings(settings, Config())
-    timeline = Timeline(
+    timeline = TimelineScreen(
         get_timelines(all_settings.config),
         all_settings,
         session,
@@ -59,7 +58,7 @@ async def test_timelines(
     )
 
     async with app.run_test() as pilot:
-        assert isinstance(app.screen, Timeline)
+        assert isinstance(app.screen, TimelineScreen)
 
         await pilot.press(FOOTER_MENU_KEY)
         assert isinstance(app.screen, SwitchTimeline)
@@ -81,7 +80,7 @@ async def test_timelines(
 
         await pilot.press(BACK_OR_EXIT_KEY)
         assert len(app.screen_stack) == 2
-        assert isinstance(app.screen, Timeline)
+        assert isinstance(app.screen, TimelineScreen)
 
         # Test updating old entities
         response_mock.json.return_value = expected_response.old.json
@@ -100,7 +99,6 @@ async def test_timelines(
         response_mock.json.return_value = expected_thread.old.json
         await pilot.press(OPEN_THREAD_KEY)
         assert len(app.screen_stack) == 3
-        assert isinstance(app.screen, ThreadTimeline)
 
         await pilot.press(BACK_OR_EXIT_KEY)
         assert len(app.screen_stack) == 2

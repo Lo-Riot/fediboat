@@ -1,5 +1,6 @@
 import subprocess
 import tempfile
+from collections.abc import Callable
 
 from requests import Session
 from rich.text import Text
@@ -20,6 +21,7 @@ from fediboat.api.auth import APIError
 from fediboat.api.timelines import (
     TimelineCallable,
     post_status,
+    thread_fetcher,
 )
 from fediboat.entities import TUIEntity
 from fediboat.settings import (
@@ -67,7 +69,30 @@ class StatusContent(Screen):
         yield Footer()
 
 
-class BaseTimeline(Screen):
+class SwitchTimeline(ModalScreen[str]):
+    BINDINGS = [
+        ("h", "switch('Home')", "Home"),
+        ("l", "switch('Local')", "Local"),
+        ("n", "switch('Notifications')", "Notifications"),
+        ("p", "switch('Personal')", "Personal"),
+        ("b", "switch('Bookmarks')", "Bookmarks"),
+        ("c", "switch('')", "Conversations"),
+        ("s", "switch('')", "Lists"),
+        ("g", "switch('Global')", "Global"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Footer()
+
+    def on_key(self, event: events.Key):
+        if self.active_bindings.get(event.key) is None:
+            self.dismiss()
+
+    def action_switch(self, timeline_name: str):
+        self.dismiss(timeline_name)
+
+
+class TimelineScreen(Screen):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
@@ -89,6 +114,7 @@ class BaseTimeline(Screen):
         timelines: dict[str, TimelineCallable],
         settings: Settings,
         session: Session,
+        fetch_thread: Callable[..., list[TUIEntity]] | None = None,
         current_timeline_name: str = "Home",
         refresh_at_start: bool = True,
     ):
@@ -98,6 +124,7 @@ class BaseTimeline(Screen):
         self.settings = settings
         self.config = settings.config
         self.session = session
+        self.fetch_thread = fetch_thread
 
         self.current_timeline = timelines[current_timeline_name](session, settings.auth)
         self.entities: list[TUIEntity] = []
@@ -122,7 +149,70 @@ class BaseTimeline(Screen):
         yield Footer()
 
     def action_update_timeline_new(self) -> None:
-        pass
+        try:
+            if self.fetch_thread is not None:
+                self.entities = self.fetch_thread()
+            else:
+                self.current_timeline = self.timelines[self.current_timeline_name](
+                    self.session, self.settings.auth
+                )
+                self.entities = next(self.current_timeline)
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+        self.add_rows()
+
+    def action_update_timeline_old(self) -> None:
+        if self.fetch_thread is not None:
+            return
+
+        try:
+            new_entities = next(self.current_timeline)
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+        except StopIteration:
+            return
+
+        self.entities.extend(new_entities)
+        self.add_rows()
+
+    def action_switch_timeline(self) -> None:
+        def switch_timeline(timeline_name: str | None):
+            if timeline_name is None:
+                return
+
+            if len(self.app.screen_stack) > 2:
+                for _ in self.app.screen_stack[2:]:
+                    self.app.pop_screen()
+
+            self.current_timeline_name = timeline_name
+            self.action_update_timeline_new()
+
+        self.app.push_screen(SwitchTimeline(), switch_timeline)
+
+    def action_open_thread(self) -> None:
+        if len(self.entities) == 0:
+            return
+
+        timeline = self.query_one(DataTable)
+        row_index = timeline.cursor_row
+        selected_entity = self.entities[row_index]
+        if selected_entity.status is None:
+            return
+
+        fetch_thread = thread_fetcher(
+            self.session, self.settings.auth, selected_entity.status
+        )
+        self.app.push_screen(
+            TimelineScreen(
+                self.timelines,
+                self.settings,
+                self.session,
+                fetch_thread,
+                self.current_timeline_name,
+            )
+        )
 
     def action_post_status(
         self,
@@ -245,6 +335,12 @@ class BaseTimeline(Screen):
 
     def action_cursor_down(self) -> None:
         timeline = self.query_one(DataTable)
+
+        if timeline.cursor_row == timeline.row_count - 1:
+            old_row_index = timeline.cursor_row
+            self.action_update_timeline_old()
+            timeline.move_cursor(row=old_row_index)
+
         timeline.action_cursor_down()
 
     def action_select_row(self) -> None:

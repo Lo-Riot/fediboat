@@ -5,17 +5,14 @@ from textual.app import App
 from fediboat.api.auth import get_headers
 from fediboat.api.timelines import get_timelines, handle_request_errors
 from fediboat.cli import cli
-from fediboat.screens.base import StatusContent
-from fediboat.screens.timelines import EntityTimeline, Timeline
-from fediboat.settings import (
-    load_settings,
-)
+from fediboat.screens import StatusContent, TimelineScreen
+from fediboat.settings import load_settings
 
 
 class FediboatApp(App):
     """Fediboat - Mastodon TUI client"""
 
-    def __init__(self, timeline: Timeline):
+    def __init__(self, timeline: TimelineScreen):
         self.timeline = timeline
         super().__init__()
 
@@ -36,7 +33,7 @@ def tui(ctx):
     session.headers.update(get_headers(settings.auth.access_token))
     session.hooks["response"].append(handle_request_errors)
 
-    timeline = EntityTimeline(get_timelines(settings.config), settings, session)
+    timeline = TimelineScreen(get_timelines(settings.config), settings, session)
     app = FediboatApp(timeline)
     app.run()
 
