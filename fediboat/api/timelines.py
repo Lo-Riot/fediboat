@@ -205,6 +205,24 @@ def thread_fetcher(
     return fetch_thread
 
 
+def favourite_status(
+    session: Session, settings: AuthSettings, status: Status
+) -> Status:
+    endpoint = "favourite" if not status.favourited else "unfavourite"
+    resp = session.post(
+        f"{settings.instance_url}/api/v1/statuses/{status.id}/{endpoint}"
+    )
+    return Status.model_validate(resp.json())
+
+
+def reblog_status(session: Session, settings: AuthSettings, status: Status) -> Status:
+    endpoint = "reblog" if not status.reblogged else "unreblog"
+    resp = session.post(
+        f"{settings.instance_url}/api/v1/statuses/{status.id}/{endpoint}"
+    )
+    return Status.model_validate(resp.json())
+
+
 def post_status(
     content: str,
     session: Session,

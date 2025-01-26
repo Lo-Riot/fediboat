@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from requests import Session
 from rich.text import Text
@@ -20,10 +21,12 @@ from textual.widgets import (
 from fediboat.api.auth import APIError
 from fediboat.api.timelines import (
     TimelineCallable,
+    favourite_status,
     post_status,
+    reblog_status,
     thread_fetcher,
 )
-from fediboat.entities import TUIEntity
+from fediboat.entities import NotificationTypeEnum, TUIEntity
 from fediboat.settings import (
     Settings,
 )
@@ -92,12 +95,26 @@ class SwitchTimeline(ModalScreen[str]):
         self.dismiss(timeline_name)
 
 
+@dataclass
+class TableRow:
+    id: str
+    created_at: str = ""
+    author: str = ""
+    content: str = ""
+    is_reply: str = ""
+    sign: Text | None = None
+    favourited: Text | None = None
+    reblogged: Text | None = None
+
+
 class TimelineScreen(Screen):
     BINDINGS = [
         ("r", "update_timeline_new", "Refresh"),
         ("g", "switch_timeline", "Switch timeline"),
         ("t", "open_thread", "Open thread"),
         ("p", "post_status", "Post"),
+        ("f", "favourite_status", "Favourite"),
+        ("b", "reblog_status", "Boost"),
         ("R", "reply", "Reply"),
         ("j", "cursor_down"),
         ("k", "cursor_up"),
@@ -140,6 +157,8 @@ class TimelineScreen(Screen):
         timeline.add_column("title", width=50)
         timeline.add_column("is_reply", width=1)
         timeline.add_column("notification_type", width=1)
+        timeline.add_column("favourited", width=1, key="favourited")
+        timeline.add_column("reblogged", width=1, key="reblogged")
         if self.refresh_at_start:
             self.action_update_timeline_new()
 
@@ -190,6 +209,62 @@ class TimelineScreen(Screen):
             self.action_update_timeline_new()
 
         self.app.push_screen(SwitchTimeline(), switch_timeline)
+
+    def _update_sign_cell(
+        self, row_key: str, column_key: str, value: Text | str
+    ) -> None:
+        timeline = self.query_one(DataTable)
+        timeline.update_cell(
+            row_key=row_key,
+            column_key=column_key,
+            value=value,
+        )
+
+    def action_favourite_status(self) -> None:
+        timeline = self.query_one(DataTable)
+        row_index = timeline.cursor_row
+        selected_entity = self.entities[row_index]
+        if selected_entity.status is None:
+            return
+
+        try:
+            status = favourite_status(
+                self.session, self.settings.auth, selected_entity.status
+            )
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+
+        selected_entity.status.favourited = status.favourited
+        favourited = ""
+        if status.favourited:
+            favourited = Text(
+                *self.config.notifications.signs.get(NotificationTypeEnum.favourite, "")
+            )
+        self._update_sign_cell(str(row_index), "favourited", favourited)
+
+    def action_reblog_status(self) -> None:
+        timeline = self.query_one(DataTable)
+        row_index = timeline.cursor_row
+        selected_entity = self.entities[row_index]
+        if selected_entity.status is None:
+            return
+
+        try:
+            status = reblog_status(
+                self.session, self.settings.auth, selected_entity.status
+            )
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+
+        selected_entity.status.reblogged = status.reblogged
+        reblogged = ""
+        if status.reblogged:
+            reblogged = Text(
+                *self.config.notifications.signs.get(NotificationTypeEnum.reblog, "")
+            )
+        self._update_sign_cell(str(row_index), "reblogged", reblogged)
 
     def action_open_thread(self) -> None:
         if len(self.entities) == 0:
@@ -268,27 +343,44 @@ class TimelineScreen(Screen):
         timeline = self.query_one(DataTable)
         timeline.clear()
         for row_index, entity in enumerate(self.entities):
-            created_at = content = is_reply = ""
+            row = TableRow(str(row_index + 1), author=entity.author)
             if entity.status is not None:
-                created_at = entity.status.created_at.astimezone().strftime(
+                row.created_at = entity.status.created_at.astimezone().strftime(
                     "%b %d %H:%M"
                 )
-                content = " ".join(
+                row.content = " ".join(
                     line.strip() for line in entity.status.content[:50].splitlines()
                 )
-                is_reply = "↵" if entity.status.in_reply_to_id else ""
+                row.is_reply = "↵" if entity.status.in_reply_to_id else ""
 
-            sign: tuple[str, str] = ("", "")
+                if entity.status.favourited:
+                    row.favourited = Text(
+                        *self.config.notifications.signs.get(
+                            NotificationTypeEnum.favourite, ("", "")
+                        )
+                    )
+                if entity.status.reblogged:
+                    row.reblogged = Text(
+                        *self.config.notifications.signs.get(
+                            NotificationTypeEnum.reblog, ("", "")
+                        )
+                    )
+
             if entity.sign is not None:
-                sign = self.config.notifications.signs.get(entity.sign, sign)
+                row.sign = Text(
+                    *self.config.notifications.signs.get(entity.sign, ("", ""))
+                )
 
             timeline.add_row(
-                Text(str(row_index + 1), "#708090"),
-                Text(created_at, "#B0C4DE"),
-                Text(entity.author, "#DDA0DD"),
-                Text(content, "#F5DEB3"),
-                Text(is_reply, "#87CEFA"),
-                Text(*sign),
+                Text(row.id, "#708090"),
+                Text(row.created_at, "#B0C4DE"),
+                Text(row.author, "#DDA0DD"),
+                Text(row.content, "#F5DEB3"),
+                Text(row.is_reply, "#87CEFA"),
+                row.sign,
+                row.favourited,
+                row.reblogged,
+                key=str(row_index),
             )
 
     def log_error_message(self, message: str) -> None:
