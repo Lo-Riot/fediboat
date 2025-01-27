@@ -67,7 +67,7 @@ class StatusContent(Screen):
         super().__init__()
 
     def compose(self) -> ComposeResult:
-        yield Markdown(self.content)
+        yield Markdown(self.content, id="md")
         yield Header()
         yield Footer()
 
@@ -102,7 +102,7 @@ class TableRow:
     author: str = ""
     content: str = ""
     is_reply: str = ""
-    sign: Text | None = None
+    notification_type: Text | None = None
     favourited: Text | None = None
     reblogged: Text | None = None
 
@@ -150,15 +150,16 @@ class TimelineScreen(Screen):
 
     def on_mount(self) -> None:
         timeline = self.query_one(DataTable)
+        self.timeline_table = timeline
 
         timeline.cursor_background_priority = "renderable"
         timeline.add_columns("id", "date")
         timeline.add_column("user", width=25)
         timeline.add_column("title", width=50)
         timeline.add_column("is_reply", width=1)
-        timeline.add_column("notification_type", width=1)
         timeline.add_column("favourited", width=1, key="favourited")
         timeline.add_column("reblogged", width=1, key="reblogged")
+        timeline.add_column("notification_type", width=1)
         if self.refresh_at_start:
             self.action_update_timeline_new()
 
@@ -210,19 +211,8 @@ class TimelineScreen(Screen):
 
         self.app.push_screen(SwitchTimeline(), switch_timeline)
 
-    def _update_sign_cell(
-        self, row_key: str, column_key: str, value: Text | str
-    ) -> None:
-        timeline = self.query_one(DataTable)
-        timeline.update_cell(
-            row_key=row_key,
-            column_key=column_key,
-            value=value,
-        )
-
     def action_favourite_status(self) -> None:
-        timeline = self.query_one(DataTable)
-        row_index = timeline.cursor_row
+        row_index = self.timeline_table.cursor_row
         selected_entity = self.entities[row_index]
         if selected_entity.status is None:
             return
@@ -239,13 +229,18 @@ class TimelineScreen(Screen):
         favourited = ""
         if status.favourited:
             favourited = Text(
-                *self.config.notifications.signs.get(NotificationTypeEnum.favourite, "")
+                *self.config.notifications.signs.get(
+                    NotificationTypeEnum.favourite, ("", "")
+                )
             )
-        self._update_sign_cell(str(row_index), "favourited", favourited)
+        self.timeline_table.update_cell(
+            row_key=str(row_index),
+            column_key="favourited",
+            value=favourited,
+        )
 
     def action_reblog_status(self) -> None:
-        timeline = self.query_one(DataTable)
-        row_index = timeline.cursor_row
+        row_index = self.timeline_table.cursor_row
         selected_entity = self.entities[row_index]
         if selected_entity.status is None:
             return
@@ -262,23 +257,33 @@ class TimelineScreen(Screen):
         reblogged = ""
         if status.reblogged:
             reblogged = Text(
-                *self.config.notifications.signs.get(NotificationTypeEnum.reblog, "")
+                *self.config.notifications.signs.get(
+                    NotificationTypeEnum.reblog, ("", "")
+                )
             )
-        self._update_sign_cell(str(row_index), "reblogged", reblogged)
+        self.timeline_table.update_cell(
+            row_key=str(row_index),
+            column_key="reblogged",
+            value=reblogged,
+        )
 
     def action_open_thread(self) -> None:
         if len(self.entities) == 0:
             return
 
-        timeline = self.query_one(DataTable)
-        row_index = timeline.cursor_row
+        row_index = self.timeline_table.cursor_row
         selected_entity = self.entities[row_index]
         if selected_entity.status is None:
             return
 
-        fetch_thread = thread_fetcher(
-            self.session, self.settings.auth, selected_entity.status
-        )
+        try:
+            fetch_thread = thread_fetcher(
+                self.session, self.settings.auth, selected_entity.status
+            )
+        except APIError as e:
+            self.log_error_message(str(e))
+            return
+
         self.app.push_screen(
             TimelineScreen(
                 self.timelines,
@@ -321,8 +326,7 @@ class TimelineScreen(Screen):
         if len(self.entities) == 0:
             return
 
-        timeline = self.query_one(DataTable)
-        selected_entity = self.entities[timeline.cursor_row]
+        selected_entity = self.entities[self.timeline_table.cursor_row]
         if selected_entity.status is None:
             return
 
@@ -340,8 +344,7 @@ class TimelineScreen(Screen):
         )
 
     def add_rows(self) -> None:
-        timeline = self.query_one(DataTable)
-        timeline.clear()
+        self.timeline_table.clear()
         for row_index, entity in enumerate(self.entities):
             row = TableRow(str(row_index + 1), author=entity.author)
             if entity.status is not None:
@@ -366,25 +369,27 @@ class TimelineScreen(Screen):
                         )
                     )
 
-            if entity.sign is not None:
-                row.sign = Text(
-                    *self.config.notifications.signs.get(entity.sign, ("", ""))
+            if entity.notification_type is not None:
+                row.notification_type = Text(
+                    *self.config.notifications.signs.get(
+                        entity.notification_type, ("", "")
+                    )
                 )
 
-            timeline.add_row(
+            self.timeline_table.add_row(
                 Text(row.id, "#708090"),
                 Text(row.created_at, "#B0C4DE"),
                 Text(row.author, "#DDA0DD"),
                 Text(row.content, "#F5DEB3"),
                 Text(row.is_reply, "#87CEFA"),
-                row.sign,
                 row.favourited,
                 row.reblogged,
+                row.notification_type,
                 key=str(row_index),
             )
 
     def log_error_message(self, message: str) -> None:
-        log(f"Current timeline: {self.current_timeline_name}, Error:", message)
+        log(message)
         self.app.push_screen(ErrorMessage(message))
 
     def on_data_table_row_selected(self, row_selected: DataTable.RowSelected) -> None:
@@ -405,7 +410,7 @@ class TimelineScreen(Screen):
         def jump_to_row(index: int | None):
             if index is not None:
                 index -= 1
-            self.query_one(DataTable).move_cursor(row=index)
+            self.timeline_table.move_cursor(row=index)
 
         self.app.push_screen(Jump(event.character), jump_to_row)
 
@@ -416,27 +421,27 @@ class TimelineScreen(Screen):
             self.app.exit()
 
     def action_scroll_down(self) -> None:
-        timeline = self.query_one(DataTable)
-        half_timeline_height = round(timeline.scrollable_content_region.height / 2)
-        timeline.scroll_relative(y=half_timeline_height, animate=False)
+        half_timeline_height = round(
+            self.timeline_table.scrollable_content_region.height / 2
+        )
+        self.timeline_table.scroll_relative(y=half_timeline_height, animate=False)
 
     def action_scroll_up(self) -> None:
-        timeline = self.query_one(DataTable)
-        half_timeline_height = round(timeline.scrollable_content_region.height / 2)
-        timeline.scroll_relative(y=-half_timeline_height, animate=False)
+        half_timeline_height = round(
+            self.timeline_table.scrollable_content_region.height / 2
+        )
+        self.timeline_table.scroll_relative(y=-half_timeline_height, animate=False)
 
     def action_cursor_up(self) -> None:
-        self.query_one(DataTable).action_cursor_up()
+        self.timeline_table.action_cursor_up()
 
     def action_cursor_down(self) -> None:
-        timeline = self.query_one(DataTable)
-
-        if timeline.cursor_row == timeline.row_count - 1:
-            old_row_index = timeline.cursor_row
+        if self.timeline_table.cursor_row == self.timeline_table.row_count - 1:
+            old_row_index = self.timeline_table.cursor_row
             self.action_update_timeline_old()
-            timeline.move_cursor(row=old_row_index)
+            self.timeline_table.move_cursor(row=old_row_index)
 
-        timeline.action_cursor_down()
+        self.timeline_table.action_cursor_down()
 
     def action_select_row(self) -> None:
-        self.query_one(DataTable).action_select_cursor()
+        self.timeline_table.action_select_cursor()

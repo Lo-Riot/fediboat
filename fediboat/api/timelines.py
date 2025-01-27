@@ -1,5 +1,5 @@
 from typing import Callable, Generator, Sequence, TypeAlias, TypeVar
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from bs4 import BeautifulSoup
 from pydantic import TypeAdapter
@@ -37,7 +37,9 @@ def get_timelines(config: Config) -> dict[str, TimelineCallable]:
 def handle_request_errors(resp: Response, *args, **kwargs):
     if resp.status_code != codes.ok:
         resp_json = resp.json()
-        raise APIError(resp_json["error"])
+        raise APIError(
+            f"Endpoint: {urlparse(resp.url).path}\nError: {resp_json["error"]}"
+        )
 
 
 def _html_to_plain_text(status: Status) -> Status:
@@ -104,7 +106,7 @@ def notifications_to_entities(notifications: list[Notification]) -> list[TUIEnti
             TUIEntity(
                 status=cleaned_status,
                 author=notification.account.acct,
-                sign=notification.type,
+                notification_type=notification.type,
             )
         )
     return entities

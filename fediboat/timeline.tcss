@@ -2,6 +2,18 @@ Screen {
     align: center top;
 }
 
+StatusContent {
+    align: center top;
+}
+
+#md {
+    align: center middle;
+    width: 60%;
+    max-width: 50%;
+    min-width: 90%;
+    margin: 1 0;
+}
+
 ErrorMessage {
     align: center middle;
 }
