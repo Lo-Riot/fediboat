@@ -4,8 +4,8 @@ import pytest
 from rich.text import Text
 from textual.widgets import DataTable
 
-from fediboat.__main__ import FediboatApp
 from fediboat.api.timelines import get_timelines
+from fediboat.cli import FediboatApp
 from fediboat.screens import StatusContent, SwitchTimeline, TimelineScreen
 from fediboat.settings import AuthSettings, Config, Settings
 from tests.test_api import ExpectedResponse, ExpectedThreadResponse

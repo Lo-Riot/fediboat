@@ -1,31 +1,82 @@
 import sys
-import click
 import webbrowser
-
 from pathlib import Path
 
-from .api.auth import (
-    create_app,
-    auth,
-    verify_credentials,
-    APIError,
-)
+import click
+from requests import Session
+from textual.app import App
+
+from fediboat.api.timelines import get_timelines, handle_request_errors
+from fediboat.screens import StatusContent, TimelineScreen
 from fediboat.settings import (
-    create_auth_settings,
-    load_settings,
     AuthSettings,
     LoadSettingsError,
+    create_auth_settings,
+    load_settings,
+)
+
+from .api.auth import (
+    APIError,
+    auth,
+    create_app,
+    get_headers,
+    verify_credentials,
 )
 
 
-@click.group()
-@click.option("-a", "--auth", default="~/.config/fediboat/auth.json", type=Path)
-@click.option("-c", "--config", default="~/.config/fediboat/config.toml", type=Path)
+class FediboatApp(App):
+    """Fediboat - Mastodon TUI client"""
+
+    def __init__(self, timeline: TimelineScreen):
+        self.timeline = timeline
+        super().__init__()
+
+    def on_mount(self) -> None:
+        self.title = "Fediboat"
+        self.install_screen(StatusContent(), name="status")
+        self.push_screen(self.timeline)
+
+
+@click.group(help="Fediboat - Mastodon TUI client with a Newsboat-like interface")
+@click.option(
+    "-a",
+    "--auth",
+    default="~/.config/fediboat/auth.json",
+    type=Path,
+    show_default=True,
+)
+@click.option(
+    "-c",
+    "--config",
+    default="~/.config/fediboat/config.toml",
+    type=Path,
+    show_default=True,
+)
 @click.pass_context
 def cli(ctx, auth: Path, config: Path):
     ctx.ensure_object(dict)
     ctx.obj["AUTH_SETTINGS"] = auth
     ctx.obj["CONFIG"] = config
+
+
+@cli.command()
+@click.pass_context
+def tui(ctx):
+    auth_settings_file = ctx.obj["AUTH_SETTINGS"].expanduser()
+    config_file = ctx.obj["CONFIG"].expanduser()
+    try:
+        settings = load_settings(auth_settings_file, config_file)
+    except LoadSettingsError:
+        click.secho("Error: Run the 'fediboat login' command first", err=True, fg="red")
+        sys.exit(1)
+
+    session = Session()
+    session.headers.update(get_headers(settings.auth.access_token))
+    session.hooks["response"].append(handle_request_errors)
+
+    timeline = TimelineScreen(get_timelines(settings.config), settings, session)
+    app = FediboatApp(timeline)
+    app.run()
 
 
 def _login_account() -> AuthSettings:
