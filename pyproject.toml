@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "fediboat"
-version = "0.1.0"
+dynamic = ["version"]
 authors = [
   { name="LoRiot", email="lo_riot@riseup.net" },
 ]
@@ -20,16 +24,14 @@ dependencies = [
    "pydantic>=2.10.4,<3.0",
 ]
 
+[tool.setuptools_scm]
+
 [project.urls]
 Homepage = "https://github.com/Lo-Riot/fediboat"
 Issues = "https://github.com/Lo-Riot/fediboat/issues"
 
 [project.scripts]
 fediboat = "fediboat.cli:cli"
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages=[
