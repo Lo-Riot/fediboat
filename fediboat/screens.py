@@ -79,8 +79,8 @@ class SwitchTimeline(ModalScreen[str]):
         ("n", "switch('Notifications')", "Notifications"),
         ("p", "switch('Personal')", "Personal"),
         ("b", "switch('Bookmarks')", "Bookmarks"),
-        ("c", "switch('')", "Conversations"),
-        ("s", "switch('')", "Lists"),
+        # TODO: ("c", "switch('')", "Conversations"),
+        # ("s", "switch('')", "Lists"),
         ("g", "switch('Global')", "Global"),
     ]
 

@@ -38,7 +38,7 @@ def handle_request_errors(resp: Response, *args, **kwargs):
     if resp.status_code != codes.ok:
         resp_json = resp.json()
         raise APIError(
-            f"Endpoint: {urlparse(resp.url).path}\nError: {resp_json["error"]}"
+            f"Endpoint: {urlparse(resp.url).path}\nError: {resp_json['error']}"
         )
 
 
