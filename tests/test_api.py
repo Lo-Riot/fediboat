@@ -38,7 +38,7 @@ class ExpectedThreadResponse(ExpectedResponse):
 )
 def test_timeline_api(
     session: MagicMock,
-    timeline_generator: Callable[..., Generator[list[TUIEntity]]],
+    timeline_generator: Callable[..., Generator[list[TUIEntity], None, None]],
     expected_entities_fixture: str,
     settings: AuthSettings,
     monkeypatch: pytest.MonkeyPatch,

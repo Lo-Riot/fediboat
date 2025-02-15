@@ -17,7 +17,7 @@ from fediboat.entities import (
 from fediboat.settings import AuthSettings, Config
 
 TimelineCallable: TypeAlias = Callable[
-    [Session, AuthSettings], Generator[list[TUIEntity]]
+    [Session, AuthSettings], Generator[list[TUIEntity], None, None]
 ]
 Entity = TypeVar("Entity", bound=EntityProtocol)
 QueryParams: TypeAlias = str | int | bool | Sequence[str]
@@ -66,7 +66,7 @@ def _timeline_generator(
     api_endpoint: str,
     validator: TypeAdapter[list[Entity]],
     **query_params: QueryParams,
-) -> Generator[list[Entity]]:
+) -> Generator[list[Entity], None, None]:
     next_url: str = f"{api_endpoint}?{urlencode(query_params, doseq=True)}"
     while next_url:
         resp = session.get(next_url)
@@ -120,7 +120,7 @@ def context_to_entities(context: Context, status: Status) -> list[TUIEntity]:
 
 def status_timeline_generator(
     session: Session, api_endpoint: str, **query_params: QueryParams
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     for statuses in _timeline_generator(
         session, api_endpoint, TypeAdapter(list[Status]), **query_params
     ):
@@ -129,7 +129,7 @@ def status_timeline_generator(
 
 def notification_timeline_generator(
     session: Session, api_endpoint: str, **query_params: QueryParams
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     for notifications in _timeline_generator(
         session, api_endpoint, TypeAdapter(list[Notification]), **query_params
     ):
@@ -138,7 +138,7 @@ def notification_timeline_generator(
 
 def home_timeline_generator(
     session: Session, settings: AuthSettings
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     return status_timeline_generator(
         session, f"{settings.instance_url}/api/v1/timelines/home"
     )
@@ -146,7 +146,7 @@ def home_timeline_generator(
 
 def local_timeline_generator(
     session: Session, settings: AuthSettings
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     return status_timeline_generator(
         session, f"{settings.instance_url}/api/v1/timelines/public", local=True
     )
@@ -154,7 +154,7 @@ def local_timeline_generator(
 
 def global_timeline_generator(
     session: Session, settings: AuthSettings
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     return status_timeline_generator(
         session, f"{settings.instance_url}/api/v1/timelines/public", remote=True
     )
@@ -162,7 +162,7 @@ def global_timeline_generator(
 
 def personal_timeline_generator(
     session: Session, settings: AuthSettings
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     return status_timeline_generator(
         session, f"{settings.instance_url}/api/v1/accounts/{settings.id}/statuses"
     )
@@ -170,7 +170,7 @@ def personal_timeline_generator(
 
 def bookmarks_timeline_generator(
     session: Session, settings: AuthSettings
-) -> Generator[list[TUIEntity]]:
+) -> Generator[list[TUIEntity], None, None]:
     return status_timeline_generator(
         session, f"{settings.instance_url}/api/v1/bookmarks"
     )
@@ -178,10 +178,10 @@ def bookmarks_timeline_generator(
 
 def get_notifications_timeline(
     config: Config,
-) -> Callable[[Session, AuthSettings], Generator[list[TUIEntity]]]:
+) -> Callable[[Session, AuthSettings], Generator[list[TUIEntity], None, None]]:
     def notifications_timeline_generator(
         session: Session, settings: AuthSettings
-    ) -> Generator[list[TUIEntity]]:
+    ) -> Generator[list[TUIEntity], None, None]:
         params: dict[str, QueryParams] = {
             "types[]": config.notifications.show,
             "limit": 20,
